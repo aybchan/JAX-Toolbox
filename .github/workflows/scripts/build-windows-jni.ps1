@@ -57,11 +57,12 @@ $sources = @(
     if (-not (Test-Path $path)) { throw "Missing Bazel JNI source: $path" }
     '"' + $path + '"'
 }
+# MSVC passes only the rest of the /link line to the linker.
 $response = Join-Path $OutputDirectory 'compile.rsp'
 @(
     '/nologo', '/O2', '/EHsc', '/LD', '/Fe:windows_jni.dll',
     "/I`"$headerRoot`"", "/I`"$SourceRoot`""
-) + $sources + @('/link', '/DEFAULTLIB:advapi32.lib', '/MACHINE:ARM64') |
+) + $sources + @('/link /DEFAULTLIB:advapi32.lib /MACHINE:ARM64') |
     Set-Content -Encoding ascii $response
 
 $batch = Join-Path $OutputDirectory 'compile.cmd'
