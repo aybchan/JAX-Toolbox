@@ -143,11 +143,20 @@ jobs:
             -SourceRoot ./bazel-source `
             -OutputDirectory C:/b/jni
 
-      - name: Build JAX and jaxlib wheels
+      - name: Build the pure Python JAX wheel
+        working-directory: jax
+        env:
+          # Match the snapshot version produced by build/build.py for jaxlib.
+          WHEEL_VERSION_SUFFIX: .dev0+selfbuilt
+        # The Bazel JAX target requires a prebuilt jaxlib wheel, which does not
+        # exist for Windows ARM64. JAX's setuptools backend only needs sources.
+        run: python -m pip wheel --no-deps --wheel-dir dist .
+
+      - name: Build the native jaxlib wheel
         working-directory: jax
         run: |
           python build/build.py build `
-            '--wheels=jax,jaxlib' `
+            --wheels=jaxlib `
             --python_version=$env:PYTHON_VERSION `
             --bazel_path=.\bazel-8.7.0-windows-arm64.exe `
             --clang_path="$env:JAX_CLANG_PATH" `
