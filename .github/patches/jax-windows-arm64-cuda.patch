@@ -1,0 +1,279 @@
+--- a/MODULE.bazel
++++ b/MODULE.bazel
+@@ -22,6 +22,8 @@
+ bazel_dep(name = "rules_ml_toolchain")
+ archive_override(
+     module_name = "rules_ml_toolchain",
++    patch_strip = 1,
++    patches = ["//third_party/rules_ml_toolchain:windows_cuda.patch"],
+     integrity = "sha256-AD+fcA+AoQ9wvsdh0AUpI30WpuIMBjEkyf/6mKjArzU=",
+     strip_prefix = "rules_ml_toolchain-c0eb2743b7b12b2bbcf0e1888e26d36ba6b093de",
+     urls = ["https://github.com/google-ml-infra/rules_ml_toolchain/archive/c0eb2743b7b12b2bbcf0e1888e26d36ba6b093de.tar.gz"],
+--- /dev/null
++++ b/third_party/rules_ml_toolchain/BUILD.bazel
+@@ -0,0 +1 @@
++exports_files(["windows_cuda.patch"])
+--- a/jax_plugins/cuda/BUILD.bazel
++++ b/jax_plugins/cuda/BUILD.bazel
+@@ -14,6 +14,7 @@
+ 
+ load(
+     "//jaxlib:jax.bzl",
++    "if_windows",
+     "py_library_providing_imports_info",
+     "pytype_library",
+ )
+@@ -35,10 +36,17 @@
+ 
+ cc_binary(
+     name = "pjrt_c_api_gpu_plugin.so",
+-    linkopts = [
+-        "-Wl,--version-script,$(location :gpu_version_script.lds)",
+-        "-Wl,--no-undefined",
+-    ],
++    linkopts = if_windows(
++        [
++            "/EXPORT:GetPjrtApi",
++            "/EXPORT:MosaicGpuCompile",
++            "/EXPORT:MosaicGpuUnload",
++        ],
++        [
++            "-Wl,--version-script,$(location :gpu_version_script.lds)",
++            "-Wl,--no-undefined",
++        ],
++    ),
+     linkshared = True,
+     deps = [
+         ":gpu_version_script.lds",
+--- a/jaxlib/mosaic/gpu/BUILD
++++ b/jaxlib/mosaic/gpu/BUILD
+@@ -17,7 +17,7 @@
+ load("@rules_cc//cc:cc_test.bzl", "cc_test")
+ # Placeholder: load proto_library
+ 
+-load("//jaxlib:jax.bzl", "cc_proto_library", "if_oss", "nanobind_extension", "py_library")
++load("//jaxlib:jax.bzl", "cc_proto_library", "if_oss", "if_windows", "nanobind_extension", "py_library")
+ 
+ package(
+     default_applicable_licenses = [],
+@@ -253,7 +253,10 @@
+     name = "runtime",
+     srcs = ["runtime.cc"],
+     # Linker may prune these symbols if they are not explicitly exported.
+-    linkopts = [
++    linkopts = if_windows([
++        "/EXPORT:mosaic_gpu_init_tma_desc",
++        "/EXPORT:mosaic_gpu_launch_kernel",
++    ], [
+         "-Wl,--export-dynamic-symbol='mosaic_gpu_*'",
+         "-Wl,--export-dynamic-symbol='nvshmem_my_pe'",
+         "-Wl,--export-dynamic-symbol='nvshmem_n_pes'",
+@@ -263,7 +266,7 @@
+         "-Wl,--export-dynamic-symbol='nvshmemx_cumodule_init'",
+         "-Wl,--export-dynamic-symbol='nvshmemx_init_status'",
+         "-Wl,--export-dynamic-symbol='nvshmemx_mc_ptr'",
+-    ],
++    ]),
+     deps = ["@local_config_cuda//cuda:cuda_headers"],
+     alwayslink = True,
+ )
+@@ -448,6 +451,10 @@
+     name = "libmosaic_gpu_runtime.so",
+     srcs = ["runtime.cc"],
+     copts = ["-fvisibility=default"],
++    linkopts = if_windows([
++        "/EXPORT:mosaic_gpu_init_tma_desc",
++        "/EXPORT:mosaic_gpu_launch_kernel",
++    ]),
+     linkshared = 1,
+     tags = [
+         "manual",
+--- a/jaxlib/mosaic/gpu/custom_call.cc
++++ b/jaxlib/mosaic/gpu/custom_call.cc
+@@ -12,11 +12,6 @@
+ See the License for the specific language governing permissions and
+ limitations under the License.
+ ==============================================================================*/
+-
+-#include <fcntl.h>
+-#include <spawn.h>
+-#include <sys/wait.h>
+-#include <unistd.h>
+ 
+ #include <algorithm>
+ #include <array>
+--- a/jaxlib/mosaic/gpu/nvshmem.h
++++ b/jaxlib/mosaic/gpu/nvshmem.h
+@@ -16,7 +16,9 @@
+ #ifndef JAXLIB_MOSAIC_GPU_COMM_H_
+ #define JAXLIB_MOSAIC_GPU_COMM_H_
+ 
++#if !defined(_WIN32)
+ #include <dlfcn.h>
++#endif
+ 
+ #include <cstdio>
+ #include <cstdlib>
+@@ -74,6 +76,9 @@
+ 
+  private:
+   NvshmemApi() {
++    // NVSHMEM is unavailable on Windows. Keep is_loaded() false so callers
++    // report an unsupported operation instead of resolving POSIX symbols.
++#if !defined(_WIN32)
+     const char* env_value = getenv("MOSAIC_GPU_NVSHMEM_SO_PATH");
+     const char* libnvshmem_path =
+         env_value && *env_value != 0 ? env_value : nullptr;
+@@ -88,13 +93,14 @@
+     NVSHMEM_SET_FN(nvshmemx_cumodule_init)
+     NVSHMEM_SET_FN(nvshmemx_init_status)
+     NVSHMEM_SET_FN(nvshmem_n_pes);
++#endif
+   }
+ 
+-  int (*nvshmemx_barrier_all_on_stream)(cudaStream_t);
+-  int (*nvshmemx_cumodule_finalize)(CUmodule);
+-  int (*nvshmemx_cumodule_init)(CUmodule);
+-  int (*nvshmemx_init_status)();
+-  int (*nvshmem_n_pes)();
++  int (*nvshmemx_barrier_all_on_stream)(cudaStream_t) = nullptr;
++  int (*nvshmemx_cumodule_finalize)(CUmodule) = nullptr;
++  int (*nvshmemx_cumodule_init)(CUmodule) = nullptr;
++  int (*nvshmemx_init_status)() = nullptr;
++  int (*nvshmem_n_pes)() = nullptr;
+ 
+   std::mutex mutex_;
+ };
+--- a/jaxlib/gpu/hybrid_kernels.cc
++++ b/jaxlib/gpu/hybrid_kernels.cc
+@@ -15,7 +15,14 @@
+ 
+ #include "jaxlib/gpu/hybrid_kernels.h"
+ 
++#if defined(_WIN32)
++#ifndef NOMINMAX
++#define NOMINMAX
++#endif
++#include <windows.h>
++#else
+ #include <dlfcn.h>
++#endif
+ 
+ #include <algorithm>
+ #include <cstddef>
+@@ -47,6 +54,37 @@
+ 
+ namespace ffi = ::xla::ffi;
+ 
++namespace {
++void* OpenMagmaLibrary(const char* path) {
++#if defined(_WIN32)
++  if (path != nullptr) return LoadLibraryA(path);
++  HMODULE module = nullptr;
++  // Retain a reference, matching the destructor's FreeLibrary call.
++  GetModuleHandleExA(0, nullptr, &module);
++  return module;
++#else
++  return dlopen(path, RTLD_LAZY);
++#endif
++}
++
++void* LookupMagmaSymbol(void* handle, const char* symbol) {
++#if defined(_WIN32)
++  return reinterpret_cast<void*>(
++      GetProcAddress(static_cast<HMODULE>(handle), symbol));
++#else
++  return dlsym(handle, symbol);
++#endif
++}
++
++void CloseMagmaLibrary(void* handle) {
++#if defined(_WIN32)
++  FreeLibrary(static_cast<HMODULE>(handle));
++#else
++  dlclose(handle);
++#endif
++}
++}  // namespace
++
+ // This helper class is used to define a host buffer that can be copied to and
+ // from a device buffer.
+ template <typename T>
+@@ -134,13 +172,13 @@
+ 
+ MagmaLookup::~MagmaLookup() {
+   if (initialized_) {
+-    void* magma_finalize = dlsym(handle_, "magma_finalize");
++    void* magma_finalize = LookupMagmaSymbol(handle_, "magma_finalize");
+     if (magma_finalize != nullptr) {
+       reinterpret_cast<void (*)()>(magma_finalize)();
+     }
+   }
+   if (handle_ != nullptr) {
+-    dlclose(handle_);
++    CloseMagmaLibrary(handle_);
+   }
+ }
+ 
+@@ -151,14 +189,19 @@
+   if (magma_lib_path != nullptr) {
+     paths.push_back(magma_lib_path);
+   } else {
++#if defined(_WIN32)
++    paths.push_back("magma.dll");
++    paths.push_back("libmagma.dll");
++#else
+     paths.push_back("libmagma.so.2");
+     paths.push_back("libmagma.so");
++#endif
+     paths.push_back(nullptr);
+   }
+   for (const auto& path : paths) {
+-    handle_ = dlopen(path, RTLD_LAZY);
++    handle_ = OpenMagmaLibrary(path);
+     if (handle_ != nullptr) {
+-      magma_init = dlsym(handle_, "magma_init");
++      magma_init = LookupMagmaSymbol(handle_, "magma_init");
+       if (magma_init != nullptr) {
+         if (path != nullptr) {
+           lib_path_ = std::string(path);
+@@ -200,7 +243,7 @@
+   auto it = symbols_.find(name);
+   if (it != symbols_.end()) return it->second;
+ 
+-  void* symbol = dlsym(handle_, name);
++  void* symbol = LookupMagmaSymbol(handle_, name);
+   if (symbol == nullptr) {
+     if (lib_path_.has_value()) {
+       return absl::InternalError(absl::StrFormat(
+--- a/jax_plugins/cuda/__init__.py
++++ b/jax_plugins/cuda/__init__.py
+@@ -26,6 +26,9 @@
+ 
+ cuda_plugin_extension = None
+ cuda_versions = None
++
++# Keep AddDllDirectory handles alive while the CUDA plugin is loaded.
++_windows_dll_directories = {}
+ 
+ def _import_extensions():
+   global cuda_plugin_extension
+@@ -122,6 +125,18 @@
+   We prefer the Python packages, if present. If not, we fall back to loading
+   them from LD_LIBRARY_PATH. By loading the libraries here, later lookups will
+   find these copies."""
++  if os.name == "nt":
++    # Native Windows packages use DLLs. Register local toolkit directories
++    # before importing Python extensions so their dependencies can be found.
++    for variable in ("CUDA_PATH", "CUDNN_PATH"):
++      root = os.environ.get(variable)
++      if not root:
++        continue
++      for relative in ("bin", "bin/arm64", "lib/arm64"):
++        directory = pathlib.Path(root).resolve() / relative
++        if directory.is_dir() and directory not in _windows_dll_directories:
++          _windows_dll_directories[directory] = os.add_dll_directory(str(directory))
++    return
+   _load("cuda_runtime", ["libcudart.so.12"])
+   _load("cu13", ["libcudart.so.13"])
+   # cuda_nvrtc isn't directly a dependency of JAX, but CUDNN appears to need it

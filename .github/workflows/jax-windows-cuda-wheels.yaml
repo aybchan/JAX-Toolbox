@@ -1,0 +1,302 @@
+name: Build JAX Windows ARM64 CUDA wheels
+
+on:
+  push:
+    branches:
+      - feat/windows-build-cuda
+    paths:
+      - '.github/workflows/jax-windows-cuda-wheels.yaml'
+      - '.github/patches/jax-windows-arm64.patch'
+      - '.github/workflows/scripts/build-windows-jni.ps1'
+      - '.github/workflows/scripts/install-windows-cuda.py'
+      - '.github/patches/*cuda*'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/jax-windows-cuda-wheels.yaml'
+      - '.github/patches/jax-windows-arm64.patch'
+      - '.github/workflows/scripts/build-windows-jni.ps1'
+      - '.github/workflows/scripts/install-windows-cuda.py'
+      - '.github/patches/*cuda*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  build-cuda:
+    # windows-latest is x64; this build needs a native ARM64 Python/toolchain.
+    runs-on: windows-11-arm
+    timeout-minutes: 360
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      # The PR's 3.12/3.13 locks omit NumPy for Windows ARM64.
+      PYTHON_VERSION: '3.14'
+    steps:
+      - name: Enable long paths and symbolic links
+        run: |
+          git config --global core.longpaths true
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $developerMode = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock'
+          New-Item -Path $developerMode -Force | Out-Null
+          New-ItemProperty -Path $developerMode -Name AllowDevelopmentWithoutDevLicense -Value 1 -PropertyType DWord -Force | Out-Null
+
+      - name: Check out JAX-Toolbox
+        uses: actions/checkout@v6
+        with:
+          path: toolbox
+          persist-credentials: false
+
+      - name: Check out JAX PR 40345
+        uses: actions/checkout@v6
+        with:
+          repository: jax-ml/jax
+          # https://github.com/jax-ml/jax/pull/40345
+          # Keep the integration patch in sync when updating this commit.
+          ref: 17c608ec2206772f573ae986fe8da097a34b0c39
+          path: jax
+          persist-credentials: false
+
+      - name: Set up native ARM64 Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          architecture: arm64
+
+      - name: Apply PR build fixes
+        working-directory: jax
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          git apply --check ../toolbox/.github/patches/jax-windows-arm64.patch
+          git apply ../toolbox/.github/patches/jax-windows-arm64.patch
+          git apply --check ../toolbox/.github/patches/jax-windows-arm64-cuda.patch
+          git apply ../toolbox/.github/patches/jax-windows-arm64-cuda.patch
+          New-Item -ItemType Directory -Force third_party/rules_ml_toolchain | Out-Null
+          Copy-Item ../toolbox/.github/patches/rules-ml-toolchain-windows-cuda.patch third_party/rules_ml_toolchain/windows_cuda.patch
+
+      - name: Limit Bazel configuration to the Windows ARM build
+        working-directory: jax
+        shell: python
+        # Batch mode serializes every named config into its Windows command line,
+        # including unused Linux/CUDA/RBE configs, exceeding the 32 KB limit.
+        run: |
+          import pathlib
+          import re
+
+          configs = {"windows", "clang_local", "clang", "win_arm64_clang", "ci_windows_arm64", "cuda13", "cuda_v13", "cuda_common", "build_cuda_with_clang", "cuda_libraries_from_stubs", "nonccl"}
+          bazelrc = pathlib.Path(".bazelrc")
+          lines = bazelrc.read_text().splitlines(keepends=True)
+          selected = []
+          for line in lines:
+              if "--linkopt=-Wl,--disable-new-dtags" in line:
+                  continue
+              config = re.match(r"^[a-z_]+:([^\s]+)\s", line)
+              if config is None or config[1] in configs:
+                  selected.append(line)
+          bazelrc.write_text("".join(selected))
+
+      - name: Configure the Windows ARM64 toolchain
+        working-directory: jax
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          python -c "import platform, sysconfig; assert platform.machine() == 'ARM64', platform.machine(); assert sysconfig.get_platform() == 'win-arm64'; print(platform.python_version(), platform.machine())"
+
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $visualStudio = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath
+          if (-not $visualStudio) { throw 'Visual Studio ARM64 C++ tools were not found' }
+          "BAZEL_VC=$visualStudio\VC" >> $env:GITHUB_ENV
+
+          $clang = (Get-Command clang.exe -ErrorAction Stop).Source
+          $llvmBin = Split-Path $clang
+          foreach ($tool in @('clang-cl.exe', 'clang++.exe', 'lld-link.exe')) {
+            if (-not (Test-Path (Join-Path $llvmBin $tool))) { throw "Missing LLVM tool: $tool" }
+          }
+          "BAZEL_LLVM=$(Split-Path $llvmBin)" >> $env:GITHUB_ENV
+          "JAX_CLANG_PATH=$clang" >> $env:GITHUB_ENV
+          $llvmBin >> $env:GITHUB_PATH
+          & $clang --version
+
+          # The runner includes MSYS2, but does not put it on PATH.
+          $msysBin = 'C:\msys64\usr\bin'
+          & "$msysBin\pacman.exe" -Sy --noconfirm --needed patch coreutils
+          foreach ($tool in @('bash.exe', 'patch.exe', 'realpath.exe')) {
+            if (-not (Test-Path (Join-Path $msysBin $tool))) { throw "Missing MSYS2 tool: $tool" }
+          }
+          "BAZEL_SH=$msysBin\bash.exe" >> $env:GITHUB_ENV
+          $msysBin >> $env:GITHUB_PATH
+
+      - name: Install native Windows ARM64 CUDA and cuDNN
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          python ./toolbox/.github/workflows/scripts/install-windows-cuda.py `
+            --manifest ./toolbox/.github/patches/windows-cuda-redistributions.json `
+            --cuda-path C:/cuda --cudnn-path C:/cudnn
+          & C:/cuda/bin/nvcc.exe --version
+          Get-PSDrive C
+
+      - name: Download the native Bazel pinned by JAX
+        working-directory: jax
+        # The PR's downloader selects Windows ARM64 and verifies its SHA256.
+        # Do not use the runner's preinstalled Bazel, which can be a newer major.
+        run: |
+          python -c "import sys; sys.path.insert(0, 'build'); from tools import utils; utils.download_and_verify_bazel()"
+
+      - name: Check out Bazel's Windows JNI sources
+        uses: actions/checkout@v6
+        with:
+          repository: bazelbuild/bazel
+          # Bazel 8.7.0; retain its Java/native ABI while fixing the string overread.
+          ref: a6d8d66737d56766c0f5377c62ccf2ee562a1a47
+          path: bazel-source
+          sparse-checkout: src/main/native/windows
+          persist-credentials: false
+
+      - name: Build the fixed native ARM64 JNI library
+        run: |
+          ./toolbox/.github/workflows/scripts/build-windows-jni.ps1 `
+            -SourceRoot ./bazel-source `
+            -OutputDirectory C:/b/jni
+
+      - name: Build the pure Python JAX wheel
+        working-directory: jax
+        env:
+          # Match the snapshot version produced by build/build.py for jaxlib.
+          WHEEL_VERSION_SUFFIX: .dev0+selfbuilt
+        # The Bazel JAX target requires a prebuilt jaxlib wheel, which does not
+        # exist for Windows ARM64. JAX's setuptools backend only needs sources.
+        run: python -m pip wheel --no-deps --wheel-dir dist .
+
+      - name: Build native jaxlib and CUDA wheels
+        working-directory: jax
+        run: |
+          python build/build.py build `
+            --wheels=jaxlib,jax-cuda-plugin,jax-cuda-pjrt `
+            --cuda_major_version=13 `
+            --cuda_version=13.4.3 `
+            --cudnn_version=9.28.1 `
+            --build_cuda_with_clang `
+            --disable_nccl `
+            --python_version=$env:PYTHON_VERSION `
+            --bazel_path=.\bazel-8.7.0-windows-arm64.exe `
+            --clang_path="$env:JAX_CLANG_PATH" `
+            --bazel_startup_options=--output_user_root=C:/b `
+            --bazel_startup_options=--batch `
+            --bazel_startup_options=--host_jvm_args=-Djava.library.path=C:/b/jni `
+            --bazel_options=--config=ci_windows_arm64 `
+            --bazel_options=--define=no_cuda_support=false `
+            --bazel_options=--repo_env=LOCAL_CUDA_PATH=C:/cuda `
+            --bazel_options=--repo_env=LOCAL_CUDNN_PATH=C:/cudnn `
+            --bazel_options=--jobs=4 `
+            '--bazel_options=--local_resources=memory=HOST_RAM*0.5' `
+            --output_path=dist `
+            --verbose
+
+      - name: Install the built wheels
+        working-directory: ${{ runner.temp }}
+        run: |
+          $dist = Join-Path $env:GITHUB_WORKSPACE 'jax/dist'
+          $jaxWheel = @(Get-ChildItem "$dist/jax-*.whl")
+          $jaxlibWheel = @(Get-ChildItem "$dist/jaxlib-*-win_arm64.whl")
+          if ($jaxWheel.Count -ne 1 -or $jaxlibWheel.Count -ne 1) {
+            throw 'Expected one JAX wheel and one Windows ARM64 jaxlib wheel'
+          }
+          $cudaPlugin = @(Get-ChildItem "$dist/jax_cuda13_plugin-*-win_arm64.whl")
+          $cudaPjrt = @(Get-ChildItem "$dist/jax_cuda13_pjrt-*-win_arm64.whl")
+          if ($cudaPlugin.Count -ne 1 -or $cudaPjrt.Count -ne 1) {
+            throw 'Expected Windows ARM64 CUDA plugin and PJRT wheels'
+          }
+          $wheels = @($jaxWheel[0].FullName, $jaxlibWheel[0].FullName, $cudaPlugin[0].FullName, $cudaPjrt[0].FullName)
+          python -m pip install --only-binary=:all: $wheels
+
+      - name: Test the installed wheels on ARM64
+        working-directory: ${{ runner.temp }}
+        shell: python
+        env:
+          JAX_PLATFORMS: cpu
+        run: |
+          import platform
+          import sysconfig
+          import jax
+          import jax.numpy as jnp
+          import jaxlib
+          import numpy as np
+
+          assert platform.machine() == "ARM64", platform.machine()
+          assert sysconfig.get_platform() == "win-arm64"
+          assert jax.default_backend() == "cpu"
+          x = jnp.arange(12, dtype=jnp.float32).reshape(3, 4)
+          actual = jax.jit(lambda a: a @ a.T)(x)
+          np.testing.assert_allclose(actual, np.asarray(x) @ np.asarray(x).T)
+          gradient = jax.jit(jax.grad(lambda a: jnp.sum(a * a)))(x)
+          np.testing.assert_allclose(gradient, 2 * np.asarray(x))
+          print(f"jax={jax.__version__}, jaxlib={jaxlib.__version__}")
+          print(f"Installed JAX: {jax.__file__}")
+          print(f"Devices: {jax.devices()}")
+
+      - name: Verify CUDA wheel native architecture
+        working-directory: jax
+        shell: python
+        run: |
+          import pathlib
+          import struct
+          import zipfile
+
+          wheels = list(pathlib.Path("dist").glob("jax_cuda13_*-win_arm64.whl"))
+          assert len(wheels) == 2, wheels
+          for wheel in wheels:
+              native_count = 0
+              with zipfile.ZipFile(wheel) as archive:
+                  for member in archive.namelist():
+                      if not member.endswith((".pyd", ".dll", ".so")):
+                          continue
+                      data = archive.read(member)
+                      assert data[:2] == b"MZ", (wheel.name, member, "not PE")
+                      pe_offset = struct.unpack_from("<I", data, 0x3c)[0]
+                      assert data[pe_offset:pe_offset + 4] == b"PE\0\0", member
+                      machine = struct.unpack_from("<H", data, pe_offset + 4)[0]
+                      assert machine == 0xaa64, (member, hex(machine))
+                      native_count += 1
+              assert native_count, (wheel.name, "no native CUDA binaries")
+              print(wheel.name, native_count, "ARM64 native binaries")
+          print("GPU execution is not tested on the hosted runner; CUDA wheels were built and checked as Windows ARM64 PE binaries.")
+
+      - name: Record wheel sources
+        working-directory: jax
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $source = git rev-parse HEAD
+          $patch = '../toolbox/.github/patches/jax-windows-arm64.patch'
+          @(
+            "JAX source: https://github.com/jax-ml/jax/commit/$source"
+            'Upstream PR: https://github.com/jax-ml/jax/pull/40345'
+            "JAX-Toolbox workflow commit: $env:GITHUB_SHA"
+            "Integration patch SHA256: $((Get-FileHash $patch -Algorithm SHA256).Hash)"
+            "Python: $(python --version)"
+            'CUDA: 13.4.3; cuDNN: 9.28.1; NCCL: disabled'
+            'Validation: ARM64 PE artifacts and CPU execution; GPU execution requires NVIDIA hardware'
+            "CUDA integration patch SHA256: $((Get-FileHash ../toolbox/.github/patches/jax-windows-arm64-cuda.patch -Algorithm SHA256).Hash)"
+            "CUDA toolchain patch SHA256: $((Get-FileHash ../toolbox/.github/patches/rules-ml-toolchain-windows-cuda.patch -Algorithm SHA256).Hash)"
+          ) | Set-Content dist/source.txt
+          Copy-Item $patch dist/
+          Copy-Item ../toolbox/.github/patches/jax-windows-arm64-cuda.patch dist/
+          Copy-Item ../toolbox/.github/patches/rules-ml-toolchain-windows-cuda.patch dist/
+          Copy-Item ../toolbox/.github/patches/windows-cuda-redistributions.json dist/
+          Get-Content dist/source.txt >> $env:GITHUB_STEP_SUMMARY
+          Get-ChildItem dist/*.whl | ForEach-Object { "- $($_.Name)" } >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload tested wheels
+        uses: actions/upload-artifact@v6
+        with:
+          name: jax-windows-arm64-cuda13-py${{ env.PYTHON_VERSION }}
+          path: |
+            jax/dist/*.whl
+            jax/dist/source.txt
+            jax/dist/*.patch
+            jax/dist/windows-cuda-redistributions.json
+          if-no-files-found: error
+          retention-days: 14
