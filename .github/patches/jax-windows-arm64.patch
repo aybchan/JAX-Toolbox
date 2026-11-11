@@ -39,3 +39,14 @@
 +
 +     for platform, values in config.platforms.items():
 +         if target_platforms and platform not in target_platforms:
+--- a/build/requirements_lock_3_14.txt
++++ b/build/requirements_lock_3_14.txt
+@@ -1043,7 +1043,7 @@
+     --hash=sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb \
+     --hash=sha256:edd07a4824c6b40189fb7ac9bc4c52536e9780fbbfbddf6f1e2502c31b068c36
+     # via -r build/test-requirements.txt
+-scipy==1.18.1 ; (platform_machine != 'ARM64' and sys_platform != 'win32') or (platform_machine == 'ARM64' and sys_platform == 'win32') \
++scipy==1.18.1 ; (platform_machine != 'ARM64' and sys_platform != 'win32') or ((platform_machine == 'ARM64' or platform_machine == 'aarch64') and sys_platform == 'win32') \
+     --hash=sha256:011413b7426b75012840e35649e00fe0a2c3bae89fed433876e3a99251572efc \
+     --hash=sha256:0ac49ea97594532dd44b7136094d35f5440fa06e6d9c6384a74c01764df388c5 \
+     --hash=sha256:0e82073ecc7acc6436fac4b31674109c7e1d3e596789767eda01258a8c9e8123 \
