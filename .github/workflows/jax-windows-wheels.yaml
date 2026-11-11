@@ -7,11 +7,13 @@ on:
     paths:
       - '.github/workflows/jax-windows-wheels.yaml'
       - '.github/patches/jax-windows-arm64.patch'
+      - '.github/workflows/scripts/build-windows-jni.ps1'
   workflow_dispatch:
   pull_request:
     paths:
       - '.github/workflows/jax-windows-wheels.yaml'
       - '.github/patches/jax-windows-arm64.patch'
+      - '.github/workflows/scripts/build-windows-jni.ps1'
 
 permissions:
   contents: read
@@ -125,6 +127,22 @@ jobs:
         run: |
           python -c "import sys; sys.path.insert(0, 'build'); from tools import utils; utils.download_and_verify_bazel()"
 
+      - name: Check out Bazel's Windows JNI sources
+        uses: actions/checkout@v6
+        with:
+          repository: bazelbuild/bazel
+          # Bazel 8.7.0; retain its Java/native ABI while fixing the string overread.
+          ref: a6d8d66737d56766c0f5377c62ccf2ee562a1a47
+          path: bazel-source
+          sparse-checkout: src/main/native/windows
+          persist-credentials: false
+
+      - name: Build the fixed native ARM64 JNI library
+        run: |
+          ./toolbox/.github/workflows/scripts/build-windows-jni.ps1 `
+            -SourceRoot ./bazel-source `
+            -OutputDirectory C:/b/jni
+
       - name: Build JAX and jaxlib wheels
         working-directory: jax
         run: |
@@ -135,6 +153,7 @@ jobs:
             --clang_path="$env:JAX_CLANG_PATH" `
             --bazel_startup_options=--output_user_root=C:/b `
             --bazel_startup_options=--batch `
+            --bazel_startup_options=--host_jvm_args=-Djava.library.path=C:/b/jni `
             --bazel_options=--config=ci_windows_arm64 `
             --bazel_options=--jobs=4 `
             '--bazel_options=--local_resources=memory=HOST_RAM*0.5' `
