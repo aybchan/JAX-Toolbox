@@ -1,0 +1,41 @@
+--- a/MODULE.bazel
++++ b/MODULE.bazel
+@@ -31,6 +31,15 @@
+ bazel_dep(name = "xla")
+ archive_override(
+     module_name = "xla",
++    patch_strip = 1,
++    patches = [
++        "//third_party/xla:cpu_compiler_aarch64.patch",
++        "//third_party/xla:cpu_info_windows_arm64.patch",
++        "//third_party/xla:filewrapper_windows_align.patch",
++        "//third_party/xla:llvm_windows_arm64_native_triple.patch",
++        "//third_party/xla:onednn_async_aarch64.patch",
++        "//third_party/xla:onednn_gemm_bfloat16.patch",
++    ],
+     integrity = "sha256-MsuAh9iDGKAfmXTq1iVOHKBtJj+hhH9hUDN5UlvUaJc=",
+     strip_prefix = "xla-91888df6ce85102c30220e41d952065925e10886",
+     urls = ["https://github.com/openxla/xla/archive/91888df6ce85102c30220e41d952065925e10886.tar.gz"],
+@@ -105,7 +114,7 @@
+         "//third_party/py:rules_python_local_wheel.patch",
+         # Upstreamed: https://github.com/bazel-contrib/rules_python/pull/4071
+         "//third_party/py:rules_python_windows_long_paths.patch",
+-        "//third_party/py:rules_python_pip_parse_windows_aarch64.patch",
++        "//third_party/py:rules_python_windows_arm64_pip_hub.patch",
+         # Skip pip hubs for Python versions not available for Windows ARM64(Python 3.9 & 3.10)
+         "//third_party/py:rules_python_skip_missing_interpreter.patch",
+     ],
+--- /dev/null
++++ b/third_party/py/rules_python_windows_arm64_pip_hub.patch
+@@ -0,0 +1,11 @@
++--- a/python/private/pypi/hub_builder.bzl
+++++ b/python/private/pypi/hub_builder.bzl
++@@ -423,6 +423,8 @@
++         ): None
++         for p in target_platforms
++     })
+++    if "windows_aarch64" not in target_platforms:
+++        target_platforms = target_platforms + ["windows_aarch64"]
++
++     for platform, values in config.platforms.items():
++         if target_platforms and platform not in target_platforms:
