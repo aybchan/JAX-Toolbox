@@ -69,6 +69,25 @@ jobs:
           git apply --check ../toolbox/.github/patches/jax-windows-arm64.patch
           git apply ../toolbox/.github/patches/jax-windows-arm64.patch
 
+      - name: Limit Bazel configuration to the Windows ARM build
+        working-directory: jax
+        shell: python
+        # Batch mode serializes every named config into its Windows command line,
+        # including unused Linux/CUDA/RBE configs, exceeding the 32 KB limit.
+        run: |
+          import pathlib
+          import re
+
+          configs = {"windows", "clang_local", "clang", "win_arm64_clang", "ci_windows_arm64"}
+          bazelrc = pathlib.Path(".bazelrc")
+          lines = bazelrc.read_text().splitlines(keepends=True)
+          selected = []
+          for line in lines:
+              config = re.match(r"^[a-z_]+:([^\s]+)\s", line)
+              if config is None or config[1] in configs:
+                  selected.append(line)
+          bazelrc.write_text("".join(selected))
+
       - name: Configure the Windows ARM64 toolchain
         working-directory: jax
         run: |
