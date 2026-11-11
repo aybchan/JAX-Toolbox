@@ -115,6 +115,7 @@ jobs:
             --bazel_path=.\bazel-8.7.0-windows-arm64.exe `
             --clang_path="$env:JAX_CLANG_PATH" `
             --bazel_startup_options=--output_user_root=C:/b `
+            --bazel_startup_options=--batch `
             --bazel_options=--config=ci_windows_arm64 `
             --bazel_options=--jobs=4 `
             '--bazel_options=--local_resources=memory=HOST_RAM*0.5' `
