@@ -1,0 +1,187 @@
+name: Build JAX Windows ARM64 wheels
+
+on:
+  push:
+    branches:
+      - feat/windows-build
+    paths:
+      - '.github/workflows/jax-windows-wheels.yaml'
+      - '.github/patches/jax-windows-arm64.patch'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/jax-windows-wheels.yaml'
+      - '.github/patches/jax-windows-arm64.patch'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # windows-latest is x64; this build needs a native ARM64 Python/toolchain.
+    runs-on: windows-11-arm
+    timeout-minutes: 360
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      # The PR's 3.12/3.13 locks omit NumPy for Windows ARM64.
+      PYTHON_VERSION: '3.14'
+    steps:
+      - name: Enable long paths and symbolic links
+        run: |
+          git config --global core.longpaths true
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $developerMode = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock'
+          New-Item -Path $developerMode -Force | Out-Null
+          New-ItemProperty -Path $developerMode -Name AllowDevelopmentWithoutDevLicense -Value 1 -PropertyType DWord -Force | Out-Null
+
+      - name: Check out JAX-Toolbox
+        uses: actions/checkout@v6
+        with:
+          path: toolbox
+          persist-credentials: false
+
+      - name: Check out JAX PR 40345
+        uses: actions/checkout@v6
+        with:
+          repository: jax-ml/jax
+          # https://github.com/jax-ml/jax/pull/40345
+          # Keep the integration patch in sync when updating this commit.
+          ref: 17c608ec2206772f573ae986fe8da097a34b0c39
+          path: jax
+          persist-credentials: false
+
+      - name: Set up native ARM64 Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          architecture: arm64
+
+      - name: Apply PR build fixes
+        working-directory: jax
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          git apply --check ../toolbox/.github/patches/jax-windows-arm64.patch
+          git apply ../toolbox/.github/patches/jax-windows-arm64.patch
+
+      - name: Configure the Windows ARM64 toolchain
+        working-directory: jax
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          python -c "import platform, sysconfig; assert platform.machine() == 'ARM64', platform.machine(); assert sysconfig.get_platform() == 'win-arm64'; print(platform.python_version(), platform.machine())"
+
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $visualStudio = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath
+          if (-not $visualStudio) { throw 'Visual Studio ARM64 C++ tools were not found' }
+          "BAZEL_VC=$visualStudio\VC" >> $env:GITHUB_ENV
+
+          $clang = (Get-Command clang.exe -ErrorAction Stop).Source
+          $llvmBin = Split-Path $clang
+          foreach ($tool in @('clang-cl.exe', 'clang++.exe', 'lld-link.exe')) {
+            if (-not (Test-Path (Join-Path $llvmBin $tool))) { throw "Missing LLVM tool: $tool" }
+          }
+          "BAZEL_LLVM=$(Split-Path $llvmBin)" >> $env:GITHUB_ENV
+          "JAX_CLANG_PATH=$clang" >> $env:GITHUB_ENV
+          $llvmBin >> $env:GITHUB_PATH
+          & $clang --version
+
+          # The runner includes MSYS2, but does not put it on PATH.
+          $msysBin = 'C:\msys64\usr\bin'
+          & "$msysBin\pacman.exe" -Sy --noconfirm --needed patch coreutils
+          foreach ($tool in @('bash.exe', 'patch.exe', 'realpath.exe')) {
+            if (-not (Test-Path (Join-Path $msysBin $tool))) { throw "Missing MSYS2 tool: $tool" }
+          }
+          "BAZEL_SH=$msysBin\bash.exe" >> $env:GITHUB_ENV
+          $msysBin >> $env:GITHUB_PATH
+
+      - name: Download the native Bazel pinned by JAX
+        working-directory: jax
+        # The PR's downloader selects Windows ARM64 and verifies its SHA256.
+        # Do not use the runner's preinstalled Bazel, which can be a newer major.
+        run: |
+          python -c "import sys; sys.path.insert(0, 'build'); from tools import utils; utils.download_and_verify_bazel()"
+
+      - name: Build JAX and jaxlib wheels
+        working-directory: jax
+        run: |
+          python build/build.py build `
+            '--wheels=jax,jaxlib' `
+            --python_version=$env:PYTHON_VERSION `
+            --bazel_path=.\bazel-8.7.0-windows-arm64.exe `
+            --clang_path="$env:JAX_CLANG_PATH" `
+            --bazel_startup_options=--output_user_root=C:/b `
+            --bazel_options=--config=ci_windows_arm64 `
+            --bazel_options=--jobs=4 `
+            '--bazel_options=--local_resources=memory=HOST_RAM*0.5' `
+            --output_path=dist `
+            --verbose
+
+      - name: Install the built wheels
+        working-directory: ${{ runner.temp }}
+        run: |
+          $dist = Join-Path $env:GITHUB_WORKSPACE 'jax/dist'
+          $jaxWheel = @(Get-ChildItem "$dist/jax-*.whl")
+          $jaxlibWheel = @(Get-ChildItem "$dist/jaxlib-*-win_arm64.whl")
+          if ($jaxWheel.Count -ne 1 -or $jaxlibWheel.Count -ne 1) {
+            throw 'Expected one JAX wheel and one Windows ARM64 jaxlib wheel'
+          }
+          $wheels = @($jaxWheel[0].FullName, $jaxlibWheel[0].FullName)
+          python -m pip install --only-binary=:all: $wheels
+
+      - name: Test the installed wheels on ARM64
+        working-directory: ${{ runner.temp }}
+        shell: python
+        env:
+          JAX_PLATFORMS: cpu
+        run: |
+          import platform
+          import sysconfig
+          import jax
+          import jax.numpy as jnp
+          import jaxlib
+          import numpy as np
+
+          assert platform.machine() == "ARM64", platform.machine()
+          assert sysconfig.get_platform() == "win-arm64"
+          assert jax.default_backend() == "cpu"
+          x = jnp.arange(12, dtype=jnp.float32).reshape(3, 4)
+          actual = jax.jit(lambda a: a @ a.T)(x)
+          np.testing.assert_allclose(actual, np.asarray(x) @ np.asarray(x).T)
+          gradient = jax.jit(jax.grad(lambda a: jnp.sum(a * a)))(x)
+          np.testing.assert_allclose(gradient, 2 * np.asarray(x))
+          print(f"jax={jax.__version__}, jaxlib={jaxlib.__version__}")
+          print(f"Installed JAX: {jax.__file__}")
+          print(f"Devices: {jax.devices()}")
+
+      - name: Record wheel sources
+        working-directory: jax
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $source = git rev-parse HEAD
+          $patch = '../toolbox/.github/patches/jax-windows-arm64.patch'
+          @(
+            "JAX source: https://github.com/jax-ml/jax/commit/$source"
+            'Upstream PR: https://github.com/jax-ml/jax/pull/40345'
+            "JAX-Toolbox workflow commit: $env:GITHUB_SHA"
+            "Integration patch SHA256: $((Get-FileHash $patch -Algorithm SHA256).Hash)"
+            "Python: $(python --version)"
+          ) | Set-Content dist/source.txt
+          Copy-Item $patch dist/
+          Get-Content dist/source.txt >> $env:GITHUB_STEP_SUMMARY
+          Get-ChildItem dist/*.whl | ForEach-Object { "- $($_.Name)" } >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload tested wheels
+        uses: actions/upload-artifact@v6
+        with:
+          name: jax-windows-arm64-py${{ env.PYTHON_VERSION }}
+          path: |
+            jax/dist/*.whl
+            jax/dist/source.txt
+            jax/dist/jax-windows-arm64.patch
+          if-no-files-found: error
+          retention-days: 14
