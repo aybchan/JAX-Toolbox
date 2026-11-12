@@ -416,3 +416,15 @@ diff --git a/jaxlib/tridiagonal_solve_perturbed.h b/jaxlib/tridiagonal_solve_per
      x.row(k) = rhs_row * (Scalar(1.0) / p);
    }
  }
+diff --git a/jaxlib/cuda/BUILD b/jaxlib/cuda/BUILD
+--- a/jaxlib/cuda/BUILD
++++ b/jaxlib/cuda/BUILD
+@@ -66,6 +66,8 @@
+         "@com_google_absl//absl/strings",
+         "@com_google_absl//absl/strings:str_format",
+         "@local_config_cuda//cuda:cuda_headers",
++        "@xla//xla/tsl/cuda:cuda",
++        "@xla//xla/tsl/cuda:cudart",
+         "@xla//xla/tsl/cuda:cupti",
+         "@xla//xla/tsl/cuda:cusolver",
+         "@xla//xla/tsl/cuda:cusparse",
