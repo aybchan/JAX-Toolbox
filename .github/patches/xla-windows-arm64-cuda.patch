@@ -344,3 +344,42 @@ diff --git a/xla/stream_executor/cuda/cuda_executor.cc b/xla/stream_executor/cud
  }
  
  // Returns the compute capability for the device; i.e (3, 5).
+diff --git a/third_party/triton/oss_only/build_files.patch b/third_party/triton/oss_only/build_files.patch
+--- a/third_party/triton/oss_only/build_files.patch
++++ b/third_party/triton/oss_only/build_files.patch
+@@ -19,7 +19,7 @@
+ new file mode 100644
+ --- /dev/null
+ +++ b/BUILD
+-@@ -0,0 +1,1318 @@
++@@ -0,0 +1,1331 @@
+ +# This package imports OpenAI's Triton (https://github.com/triton-lang/triton).
+ +
+ +# copybara:uncomment load("@rules:copybara.bzl", "copybara_config_test")
+@@ -75,6 +75,15 @@
+ +    },
+ +)
+ +
+++config_setting(
+++    name = "compiler_is_windows_clang_cl",
+++    constraint_values = ["@platforms//os:windows"],
+++    flag_values = {
+++        "@bazel_tools" +  # copybara:comment
+++        "//tools/cpp:compiler": "clang-cl",
+++    },
+++)
+++
+ +# TODO(csigg): fix, enable error upstream, remove.
+ +_no_unused_variable = select({
+ +    ":compiler_is_msvc": [],
+@@ -607,6 +616,10 @@
+ +            "-Wno-ctad-maybe-unsupported",
+ +            "-Wno-implicit-fallthrough",
+ +        ],
+++    }) + select({
+++        # Parse MLIR templates before later using-directives affect lookup.
+++        ":compiler_is_windows_clang_cl": ["/clang:-fno-delayed-template-parsing"],
+++        "//conditions:default": [],
+ +    }),
+ +    includes = ["include"],
+ +    deps = [

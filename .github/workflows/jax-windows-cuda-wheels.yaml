@@ -246,7 +246,7 @@ jobs:
 
       - name: Compile and link CUDA kernels on ARM64
         working-directory: jax
-        # Exercise XLA/JAX device kernels and Python extension linking before
+        # Exercise device kernels, Triton dialects, and extension linking before
         # the full PJRT graph, retaining their outputs for the wheel build.
         run: |
           & .\bazel-8.7.0-windows-arm64.exe `
@@ -260,6 +260,7 @@ jobs:
             '@xla//xla/stream_executor/cuda:cub_scan_kernel_cuda_impl' `
             '@xla//xla/stream_executor/cuda:buffer_comparator_kernel_cuda' `
             '@xla//xla/stream_executor/cuda:buffer_debug_float_check_kernel_cuda' `
+            '@@xla++third_party_ext+triton//:TritonDialects' `
             '//jaxlib/cuda:cuda_make_batch_pointers' `
             '//jaxlib/cuda:cuda_prng_kernels_impl' `
             '//jaxlib/cuda:cuda_householder_kernels' `
