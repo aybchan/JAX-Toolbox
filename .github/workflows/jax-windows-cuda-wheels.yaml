@@ -318,6 +318,8 @@ jobs:
             '--bazel_options=--repo_env=LOCAL_CUDNN_PATH=C:/cudnn'
             '--bazel_options=--repo_env=LOCAL_NCCL_PATH=C:/nccl'
             '--bazel_options=--disk_cache=C:/b/disk-cache'
+            # Cached generated files must exist before Windows creates runfiles.
+            '--bazel_options=--remote_download_outputs=all'
             '--bazel_options=--keep_going'
             '--bazel_options=--jobs=4'
             '--bazel_options=--local_resources=memory=HOST_RAM*0.5'
