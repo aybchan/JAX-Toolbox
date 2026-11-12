@@ -453,3 +453,157 @@ new file mode 100644
 + 
 + namespace RMM_NAMESPACE {
 + namespace detail {
+diff --git a/third_party/raft/workspace.bzl b/third_party/raft/workspace.bzl
+--- a/third_party/raft/workspace.bzl
++++ b/third_party/raft/workspace.bzl
+@@ -59,5 +59,8 @@
+             "//third_party/raft:select_k_runner.hpp.patch",
+             "//third_party/raft:select_k_runner.cu.cc.patch",
+             "//third_party/raft:select_k_smoke_test.cu.cc.patch",
++            # This metadata filename shadows the C++ <version> header on Windows.
++            "//third_party/raft:exclude_version.patch",
++            "//third_party/raft:remove_unused_execinfo.patch",
+         ],
+     )
+diff --git a/third_party/raft/exclude_version.patch b/third_party/raft/exclude_version.patch
+new file mode 100644
+--- /dev/null
++++ b/third_party/raft/exclude_version.patch
+@@ -0,0 +1,6 @@
++diff --git a/VERSION b/VERSION
++deleted file mode 100644
++--- a/VERSION
+++++ /dev/null
++@@ -1 +0,0 @@
++-26.02.00
+diff --git a/third_party/raft/remove_unused_execinfo.patch b/third_party/raft/remove_unused_execinfo.patch
+new file mode 100644
+--- /dev/null
++++ b/third_party/raft/remove_unused_execinfo.patch
+@@ -0,0 +1,12 @@
++diff --git a/cpp/include/raft/util/cudart_utils.hpp b/cpp/include/raft/util/cudart_utils.hpp
++--- a/cpp/include/raft/util/cudart_utils.hpp
+++++ b/cpp/include/raft/util/cudart_utils.hpp
++@@ -13,8 +13,6 @@
++ #include <cuda_bf16.h>
++ #include <cuda_fp16.h>
++ #include <cuda_runtime_api.h>
++-
++-#include <execinfo.h>
++ 
++ #include <chrono>
++ #include <cstdio>
+diff --git a/third_party/triton/workspace.bzl b/third_party/triton/workspace.bzl
+--- a/third_party/triton/workspace.bzl
++++ b/third_party/triton/workspace.bzl
+@@ -76,5 +76,7 @@
+         sha256 = TRITON_SHA256,
+         strip_prefix = "triton-" + TRITON_COMMIT,
+         urls = tf_mirror_urls("https://github.com/triton-lang/triton/archive/{}.tar.gz".format(TRITON_COMMIT)),
+-        patch_file = common_patch_list + oss_only_patch_list,
++        patch_file = common_patch_list + oss_only_patch_list + [
++            "//third_party/triton:oss_only/windows_build.patch",
++        ],
+     )
+diff --git a/third_party/triton/oss_only/windows_build.patch b/third_party/triton/oss_only/windows_build.patch
+new file mode 100644
+--- /dev/null
++++ b/third_party/triton/oss_only/windows_build.patch
+@@ -0,0 +1,48 @@
++diff --git a/lib/Dialect/TritonGPU/Transforms/WarpSpecialization/PartitionLoops.cpp b/lib/Dialect/TritonGPU/Transforms/WarpSpecialization/PartitionLoops.cpp
++--- a/lib/Dialect/TritonGPU/Transforms/WarpSpecialization/PartitionLoops.cpp
+++++ b/lib/Dialect/TritonGPU/Transforms/WarpSpecialization/PartitionLoops.cpp
++@@ -489,7 +489,7 @@
++     return success();
++ 
++   auto numPartitions = partitions.getNumPartitions();
++-  auto defaultPartition = partitions.getPartition((int)0);
+++  auto defaultPartition = partitions.getPartition(0u);
++   auto loopVarCategories = classifyLoopVars(loop, defaultPartition, partitions);
++   auto [loopVarIndices, newResultIndices] =
++       getLoopVarIndicesToKeep(loop, defaultPartition, loopVarCategories);
++diff --git a/third_party/amd/include/TritonAMDGPUToLLVM/GCNAsmFormat.h b/third_party/amd/include/TritonAMDGPUToLLVM/GCNAsmFormat.h
++--- a/third_party/amd/include/TritonAMDGPUToLLVM/GCNAsmFormat.h
+++++ b/third_party/amd/include/TritonAMDGPUToLLVM/GCNAsmFormat.h
++@@ -40,9 +40,9 @@
++ namespace mlir::triton {
++ using llvm::StringRef;
++ 
++-class GCNInstr;
++-class GCNInstrCommon;
++-class GCNInstrExecution;
+++struct GCNInstr;
+++struct GCNInstrCommon;
+++struct GCNInstrExecution;
++ 
++ // GCNBuilder helps to manage a GCN asm program consists of one or multiple
++ // instructions.
++@@ -238,8 +238,8 @@
++     return modArchive.back().get();
++   }
++ 
++-  friend class GCNInstr;
++-  friend class GCNInstrCommon;
+++  friend struct GCNInstr;
+++  friend struct GCNInstrCommon;
++ 
++ protected:
++   llvm::SmallVector<std::unique_ptr<Operand>, 6> argArchive;
++@@ -279,7 +279,7 @@
++   GCNBuilder *builder{};
++   llvm::SmallVector<std::string, 4> instrParts;
++ 
++-  friend class GCNInstrExecution;
+++  friend struct GCNInstrExecution;
++ };
++ 
++ template <class ConcreteT> struct GCNInstrBase : public GCNInstrCommon {
+diff --git a/xla/util/build_defs.bzl b/xla/util/build_defs.bzl
+--- a/xla/util/build_defs.bzl
++++ b/xla/util/build_defs.bzl
+@@ -16,6 +16,7 @@
+ """Contains embed_files build rule."""
+ 
+ load("@bazel_skylib//lib:new_sets.bzl", "sets")
++load("@bazel_skylib//lib:shell.bzl", "shell")
+ load("@com_google_protobuf//bazel/common:proto_info.bzl", "ProtoInfo")
+ load("//xla/tsl:package_groups.bzl", "DEFAULT_LOAD_VISIBILITY")
+ 
+@@ -40,7 +41,7 @@
+     proto_descriptor_sets = _descriptor_set_list(ctx.attr.deps, ctx.file.descriptor_set)
+ 
+     descriptor_set_in = ("--descriptor_set_in=%s" %
+-                         ":".join([file.path for file in proto_descriptor_sets]))
++                         ctx.configuration.host_path_separator.join([file.path for file in proto_descriptor_sets]))
+ 
+     if len(ctx.outputs.outs) != 1:
+         fail("Expected exactly one output")
+@@ -52,8 +53,8 @@
+         descriptor_set_in,
+     ]
+     redirect = [
+-        "< %s" % ctx.file.src.path,
+-        "> %s" % out.path,
++        "< %s" % shell.quote(ctx.file.src.path),
++        "> %s" % shell.quote(out.path),
+     ]
+ 
+     # If command line will be long, use flag file
+@@ -68,7 +69,7 @@
+             outputs = ctx.outputs.outs,
+             inputs = [ctx.file.src, flagfile] + proto_descriptor_sets,
+             tools = [ctx.executable._tool],
+-            command = " ".join([ctx.executable._tool.path, "@%s" % flagfile.path] + redirect),
++            command = " ".join([shell.quote(ctx.executable._tool.path), shell.quote("@%s" % flagfile.path)] + redirect),
+             mnemonic = "ProtoDataCompilerFlagfile",
+             use_default_shell_env = False,
+         )
+@@ -79,7 +80,7 @@
+             outputs = ctx.outputs.outs,
+             inputs = [ctx.file.src] + proto_descriptor_sets,
+             tools = [ctx.executable._tool],
+-            command = " ".join([ctx.executable._tool.path] + protoc_args + redirect),
++            command = " ".join([shell.quote(arg) for arg in [ctx.executable._tool.path] + protoc_args] + redirect),
+             mnemonic = "ProtoDataCompiler",
+             use_default_shell_env = False,
+         )
