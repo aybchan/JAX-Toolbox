@@ -178,7 +178,7 @@ diff --git a/xla/pjrt/pjrt_api.cc b/xla/pjrt/pjrt_api.cc
  #include "absl/status/statusor.h"
  #include "absl/strings/ascii.h"
  #include "absl/strings/numbers.h"
-@@ -32,10 +33,15 @@
+@@ -32,10 +33,14 @@
  #include "xla/pjrt/c/pjrt_c_api_status_utils.h"
  #include "xla/tsl/platform/errors.h"
  
@@ -189,7 +189,6 @@ diff --git a/xla/pjrt/pjrt_api.cc b/xla/pjrt/pjrt_api.cc
 +#endif
 +#include <windows.h>
 +#undef ERROR
-+#include "tsl/platform/load_library.h"
 +#else
  #include <dlfcn.h>
 -
@@ -197,29 +196,61 @@ diff --git a/xla/pjrt/pjrt_api.cc b/xla/pjrt/pjrt_api.cc
  #endif
  
  namespace pjrt {
-@@ -101,8 +107,19 @@
+@@ -101,8 +106,51 @@
  absl::StatusOr<const PJRT_Api*> LoadPjrtPlugin(absl::string_view device_type,
                                                 absl::string_view library_path) {
  #ifdef PLATFORM_WINDOWS
 -  return absl::UnimplementedError(
 -      "LoadPjrtPlugin is not implemented on windows yet.");
-+  void* library = nullptr;
-+  ABSL_RETURN_IF_ERROR(tsl::internal::LoadDynamicLibrary(
-+      std::string(library_path).c_str(), &library));
-+  void* symbol = nullptr;
-+  absl::Status symbol_status =
-+      tsl::internal::GetSymbolFromLibrary(library, "GetPjrtApi", &symbol);
-+  if (!symbol_status.ok()) {
-+    FreeLibrary(static_cast<HMODULE>(library));
++  auto windows_error = [&](const char* operation, DWORD error) {
++    return absl::InternalError(absl::StrCat(
++        operation, " failed for ", library_path, " (Windows error ", error, ")"));
++  };
++  const std::string utf8_path(library_path);
++  int wide_size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
++                                    utf8_path.c_str(), -1, nullptr, 0);
++  if (wide_size == 0) {
++    return windows_error("MultiByteToWideChar", GetLastError());
++  }
++  std::wstring wide_path(wide_size, L'\0');
++  if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8_path.c_str(), -1,
++                          wide_path.data(), wide_size) == 0) {
++    return windows_error("MultiByteToWideChar", GetLastError());
++  }
++  DWORD full_size = GetFullPathNameW(wide_path.c_str(), 0, nullptr, nullptr);
++  if (full_size == 0) {
++    return windows_error("GetFullPathNameW", GetLastError());
++  }
++  std::wstring full_path(full_size, L'\0');
++  DWORD full_length = GetFullPathNameW(wide_path.c_str(), full_size,
++                                      full_path.data(), nullptr);
++  if (full_length == 0) {
++    return windows_error("GetFullPathNameW", GetLastError());
++  }
++  if (full_length >= full_size) {
++    return windows_error("GetFullPathNameW", ERROR_INSUFFICIENT_BUFFER);
++  }
++  // Match Python extension loading: search AddDllDirectory registrations and
++  // dependencies beside the plugin, without changing the process search policy.
++  HMODULE library = LoadLibraryExW(
++      full_path.c_str(), nullptr,
++      LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
++  if (library == nullptr) {
++    return windows_error("LoadLibraryExW", GetLastError());
++  }
++  FARPROC symbol = GetProcAddress(library, "GetPjrtApi");
++  if (symbol == nullptr) {
++    DWORD error = GetLastError();
++    FreeLibrary(library);
 +    return absl::NotFoundError(
-+        absl::StrCat("GetPjrtApi not found in ", library_path, ": ",
-+                     symbol_status.message()));
++        absl::StrCat("GetPjrtApi not found in ", library_path,
++                    " (Windows error ", error, ")"));
 +  }
 +  PjrtApiInitFn init_fn = reinterpret_cast<PjrtApiInitFn>(symbol);
  #else
    void* library = dlopen(library_path.data(), RTLD_LAZY);
    if (library == nullptr) {
-@@ -116,12 +133,13 @@
+@@ -116,12 +164,13 @@
      return absl::NotFoundError(
          absl::StrCat("GetPjrtApi not found in ", library_path));
    }
@@ -251,17 +282,6 @@ diff --git a/xla/pjrt/pjrt_api_test.cc b/xla/pjrt/pjrt_api_test.cc
  TEST(PjRtApiTest, InitPjRtPlugin) {
    PJRT_Api api;
    api.struct_size = PJRT_Api_STRUCT_SIZE;
-diff --git a/xla/pjrt/BUILD b/xla/pjrt/BUILD
---- a/xla/pjrt/BUILD
-+++ b/xla/pjrt/BUILD
-@@ -335,6 +335,7 @@
-         "//xla/pjrt/c:pjrt_c_api_hdrs",
-         "//xla/pjrt/c:pjrt_c_api_status_utils",
-         "//xla/tsl/platform:errors",
-+        "@tsl//tsl/platform:load_library",
-         "@com_google_absl//absl/container:flat_hash_map",
-         "@com_google_absl//absl/log",
-         "@com_google_absl//absl/status",
 diff --git a/xla/stream_executor/cuda/cuda_diagnostics.cc b/xla/stream_executor/cuda/cuda_diagnostics.cc
 --- a/xla/stream_executor/cuda/cuda_diagnostics.cc
 +++ b/xla/stream_executor/cuda/cuda_diagnostics.cc

@@ -21,11 +21,11 @@
 
 - [x] Inspect previous CI logs and current workflow. Latest CPU run is compiling; prior missing prebuilt-jaxlib failure is already fixed in the base commit.
 - [x] Create the requested branch from `4a8041fde020af5cf2cefa00b3bec2ca84ab870e`.
-- [ ] Add a pinned Windows ARM64 CUDA/cuDNN installer with checksum and archive-layout tests.
-- [ ] Enable CUDA plugin/PJRT targets, retain necessary named Bazel configs, and trigger pushes on the new branch.
-- [ ] Adapt dependency selection and native toolchain setup based on pinned-source evidence and CI diagnostics.
-- [ ] Adapt Windows linking and packaging, retaining a consistent plugin filename and exported PJRT API.
-- [ ] Validate locally, commit only task files using existing commit style, and push.
+- [x] Add a pinned Windows ARM64 CUDA/cuDNN installer with checksum and archive-layout tests.
+- [x] Enable CUDA plugin/PJRT targets, retain necessary named Bazel configs, and trigger pushes on the new branch.
+- [x] Adapt dependency selection and native toolchain setup based on pinned-source evidence and CI diagnostics.
+- [x] Adapt Windows linking and packaging, retaining a consistent plugin filename and exported PJRT API.
+- [x] Validate locally, commit only task files using existing commit style, and push.
 - [ ] Monitor the relevant CI run, retrieve failing logs, and repeat targeted fixes.
 - [ ] Verify CI success and inspect actual Windows ARM64 CUDA wheel artifacts before completing.
 
@@ -65,3 +65,7 @@
 - Iteration 9 (`8dc71024`, run 43133104448): JDK 21 completes kernel preflight and full target analysis. Compilation reaches the Householder CUDA kernel, then Clang rejects Abseil __declspec(thread) during device parsing. Use the standard thread_local spelling only in the Windows Clang CUDA device pass; host declarations and ARM64 COFF objects remain identical, and real device TLS remains rejected. Append to the existing pinned Abseil override. Also add a 4 GiB saved Bazel disk cache keyed by runner/toolchain identity, retained after failures and skipped after cancellation; four filesystem tests pass.
 
 - Shared checkout update: commit d97ca720 already fixes the Mosaic NVVM builder mismatch found in CPU baseline run 43116751667 after 7,362 seconds. It is included in the current CUDA branch; independently verified optional predicate behavior and ARM64 syntax. Preserve that shared commit and its CPU workflow/documentation changes.
+
+- Iteration 10 (`e842538a`, run 43136423589): CUDA preflight and full target analysis pass; compilation reaches linalg device assembly and ptxas reports an unresolved static copysign(float, float). The pinned Windows CUDA headers declare but omit this device overload. Use libcudacxx copysign for CUDA tridiagonal solves, retaining std::copysign for CPU/ROCm. Expand the early compile check to all four JAX CUDA source units. The first disk cache saved successfully (34,860,079 bytes).
+
+- Installed-wheel source review: register Windows CUDA DLL directories before eager kernel extension imports, using one retained-handle helper shared with PJRT discovery. Make the PJRT loader search these directories through the documented Windows search flags and an absolute Unicode path. Honor CUDA_PATH when CUDA_ROOT is absent on Windows so XLA can locate libdevice. Import-order, path-selection, and mocked WinAPI loader regressions pass; actual GPU execution still requires NVIDIA hardware.

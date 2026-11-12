@@ -243,10 +243,10 @@ jobs:
           $buildArgs | ConvertTo-Json | Set-Content C:/b/build-args.json
           python build/build.py @buildArgs --configure_only
 
-      - name: Compile a CUDA kernel on ARM64
+      - name: Compile CUDA kernels on ARM64
         working-directory: jax
-        # Exercise CUDA parsing, headers, device compilation, and ARM64 host
-        # object generation before compiling the full PJRT dependency graph.
+        # Exercise XLA and JAX device kernels before compiling the full PJRT
+        # dependency graph, retaining their outputs for the wheel build.
         run: |
           & .\bazel-8.7.0-windows-arm64.exe `
             --output_user_root=C:/b --batch `
@@ -255,7 +255,11 @@ jobs:
             --host_jvm_args=-XX:ErrorFile=C:/b/diagnostics/hs_err_pid%p.log `
             --host_jvm_args=-Xlog:library=debug `
             build --config=cuda_libraries_from_stubs --disk_cache=C:/b/disk-cache `
-            '@xla//xla/stream_executor/cuda:cub_sort_kernel_cuda_type_bf16'
+            '@xla//xla/stream_executor/cuda:cub_sort_kernel_cuda_type_bf16' `
+            '//jaxlib/cuda:cuda_make_batch_pointers' `
+            '//jaxlib/cuda:cuda_prng_kernels_impl' `
+            '//jaxlib/cuda:cuda_householder_kernels' `
+            '//jaxlib/cuda:cuda_linalg_kernels_impl'
 
       - name: Build native jaxlib and CUDA wheels
         working-directory: jax

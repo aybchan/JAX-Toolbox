@@ -277,31 +277,13 @@
        return absl::InternalError(absl::StrFormat(
 --- a/jax_plugins/cuda/__init__.py
 +++ b/jax_plugins/cuda/__init__.py
-@@ -26,6 +26,9 @@
- 
- cuda_plugin_extension = None
- cuda_versions = None
-+
-+# Keep AddDllDirectory handles alive while the CUDA plugin is loaded.
-+_windows_dll_directories = {}
- 
- def _import_extensions():
-   global cuda_plugin_extension
-@@ -122,6 +125,18 @@
+@@ -122,6 +122,10 @@
    We prefer the Python packages, if present. If not, we fall back to loading
    them from LD_LIBRARY_PATH. By loading the libraries here, later lookups will
    find these copies."""
 +  if os.name == "nt":
-+    # Native Windows packages use DLLs. Register local toolkit directories
-+    # before importing Python extensions so their dependencies can be found.
-+    for variable in ("CUDA_PATH", "CUDNN_PATH"):
-+      root = os.environ.get(variable)
-+      if not root:
-+        continue
-+      for relative in ("bin", "bin/arm64", "lib/arm64"):
-+        directory = pathlib.Path(root).resolve() / relative
-+        if directory.is_dir() and directory not in _windows_dll_directories:
-+          _windows_dll_directories[directory] = os.add_dll_directory(str(directory))
++    from jaxlib.plugin_support import initialize_windows_cuda_dll_search_path
++    initialize_windows_cuda_dll_search_path()
 +    return
    _load("cuda_runtime", ["libcudart.so.12"])
    _load("cu13", ["libcudart.so.13"])
@@ -310,3 +292,127 @@
 +++ b/third_party/rules_cc/BUILD.bazel
 @@ -0,0 +1 @@
 +exports_files(["windows_cuda.patch"])
+--- a/jaxlib/plugin_support.py
++++ b/jaxlib/plugin_support.py
+@@ -14,11 +14,33 @@
+ 
+ from collections.abc import Sequence
+ import importlib
++import os
++import pathlib
+ import re
+ from types import ModuleType
+ import warnings
+ 
+ from .version import __version__ as jaxlib_version
++
++
++# Keep AddDllDirectory handles alive for imported CUDA extensions.
++_windows_cuda_dll_directories = {}
++
++
++def initialize_windows_cuda_dll_search_path() -> None:
++  """Register toolkit DLL directories before importing CUDA extensions."""
++  if os.name != "nt":
++    return
++  for variable in ("CUDA_PATH", "CUDNN_PATH"):
++    root = os.environ.get(variable)
++    if not root:
++      continue
++    for relative in ("bin", "bin/arm64", "lib/arm64"):
++      directory = pathlib.Path(root).resolve() / relative
++      if directory.is_dir() and directory not in _windows_cuda_dll_directories:
++        _windows_cuda_dll_directories[directory] = os.add_dll_directory(
++            str(directory)
++        )
+ 
+ 
+ _PLUGIN_MODULE_NAMES = {
+--- a/jaxlib/tools/build_gpu_kernels_wheel.py
++++ b/jaxlib/tools/build_gpu_kernels_wheel.py
+@@ -135,7 +135,13 @@
+ 
+   plugin_dir = wheel_sources_path / f"jax_cuda{cuda_version}_plugin"
+   plugin_dir.mkdir(parents=True, exist_ok=True)
+-  (plugin_dir / "__init__.py").touch()
++  (plugin_dir / "__init__.py").write_text(
++      "import sys\n"
++      "\n"
++      "if sys.platform == 'win32':\n"
++      "  from jaxlib.plugin_support import initialize_windows_cuda_dll_search_path\n"
++      "  initialize_windows_cuda_dll_search_path()\n"
++  )
+   copy_files(
+       dst_dir=plugin_dir,
+       src_files=[
+--- a/jax/_src/lib/__init__.py
++++ b/jax/_src/lib/__init__.py
+@@ -153,8 +153,11 @@
+ 
+ def _cuda_path() -> str | None:
+   def _try_cuda_root_environment_variable() -> str | None:
+-    """Use `CUDA_ROOT` environment variable if set."""
+-    return os.environ.get('CUDA_ROOT', None)
++    """Use `CUDA_ROOT`, or the Windows toolkit's `CUDA_PATH`."""
++    root = os.environ.get('CUDA_ROOT', None)
++    if root is None and os.name == 'nt':
++      root = os.environ.get('CUDA_PATH', None)
++    return root
+ 
+   def _try_cuda_nvcc_import() -> str | None:
+     """Try to import `cuda_nvcc` and get its path directly.
+diff --git a/jaxlib/tridiagonal_solve_perturbed.h b/jaxlib/tridiagonal_solve_perturbed.h
+--- a/jaxlib/tridiagonal_solve_perturbed.h
++++ b/jaxlib/tridiagonal_solve_perturbed.h
+@@ -24,6 +24,7 @@
+ #include "Eigen/Core"
+ 
+ #if defined(__CUDACC__) || defined(JAX_GPU_CUDA)
++#include <cuda/std/cmath>
+ #include <cuda/std/complex>
+ 
+ namespace Eigen {
+@@ -60,6 +61,17 @@
+ #endif
+ 
+ namespace jax {
++
++template <typename T>
++EIGEN_DEVICE_FUNC T TridiagonalCopySign(T magnitude, T sign) {
++#if defined(__CUDACC__) || defined(JAX_GPU_CUDA)
++  // Clang's Windows CUDA headers declare the float std::copysign device
++  // overload without defining it. libcudacxx provides a device implementation.
++  return ::cuda::std::copysign(magnitude, sign);
++#else
++  return std::copysign(magnitude, sign);
++#endif
++}
+ 
+ // Adjust pivot such that neither 'rhs[i,:] / pivot' nor '1 / pivot' cause
+ // overflow, where i numerates the multiple right-hand-sides. During the
+@@ -92,7 +104,7 @@
+   // 'perturb' should never have magnitude smaller than safemin.
+   perturb = std::max(Eigen::numext::abs(perturb), safemin);
+   // Make sure perturb and pivot have the same sign.
+-  perturb = std::copysign(perturb, real(pivot));
++  perturb = TridiagonalCopySign(perturb, real(pivot));
+ 
+   bool stop = false;
+   const RealScalar max_factor = rhs_row.derived().array().abs().maxCoeff();
+@@ -268,14 +280,14 @@
+   if (n > 1) {
+     p = u(n - 2, 0);
+     rhs_row = x.row(n - 2) - u(n - 2, 1) * x.row(n - 1);
+-    MaybePerturbPivot(std::copysign(perturb, real(p)), p, rhs_row);
++    MaybePerturbPivot(TridiagonalCopySign(perturb, real(p)), p, rhs_row);
+     x.row(n - 2) = rhs_row * (Scalar(1.0) / p);
+   }
+ 
+   for (int k = n - 3; k >= 0; --k) {
+     p = u(k, 0);
+     rhs_row = x.row(k) - u(k, 1) * x.row(k + 1) - u(k, 2) * x.row(k + 2);
+-    MaybePerturbPivot(std::copysign(perturb, real(p)), p, rhs_row);
++    MaybePerturbPivot(TridiagonalCopySign(perturb, real(p)), p, rhs_row);
+     x.row(k) = rhs_row * (Scalar(1.0) / p);
+   }
+ }
