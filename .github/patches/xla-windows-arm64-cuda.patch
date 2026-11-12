@@ -262,3 +262,26 @@ diff --git a/xla/pjrt/BUILD b/xla/pjrt/BUILD
          "@com_google_absl//absl/container:flat_hash_map",
          "@com_google_absl//absl/log",
          "@com_google_absl//absl/status",
+diff --git a/xla/stream_executor/cuda/cuda_diagnostics.cc b/xla/stream_executor/cuda/cuda_diagnostics.cc
+--- a/xla/stream_executor/cuda/cuda_diagnostics.cc
++++ b/xla/stream_executor/cuda/cuda_diagnostics.cc
+@@ -14,6 +14,8 @@
+ ==============================================================================*/
+ 
+ #include "xla/stream_executor/cuda/cuda_diagnostics.h"
++
++#include "tsl/platform/platform.h"
+ 
+ #if !defined(PLATFORM_WINDOWS)
+ #include <dirent.h>
+diff --git a/xla/stream_executor/cuda/BUILD b/xla/stream_executor/cuda/BUILD
+--- a/xla/stream_executor/cuda/BUILD
++++ b/xla/stream_executor/cuda/BUILD
+@@ -173,6 +173,7 @@
+         "@com_google_absl//absl/status:statusor",
+         "@com_google_absl//absl/strings",
+         "@com_google_absl//absl/strings:str_format",
++        "@tsl//tsl/platform:platform",
+         "@tsl//tsl/platform:platform_port",
+     ],
+ )
