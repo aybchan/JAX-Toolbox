@@ -41,3 +41,5 @@
 
 - Initial investigation: CPU workflow strips every CUDA config and requests only jaxlib. Pinned rules_ml_toolchain selects Linux CUDA redistributions and `.so` libraries. JAX GPU target has ELF linker options. Native Windows ARM64 CUDA/cuDNN redistributions exist.
 - Ruling: Execute the user's supplied loop directly; the requested branch, destination, and success criterion already authorize implementation and pushes.
+
+- Iteration 1 (`fd78236b`, run 43123733711): native CUDA/cuDNN install and source patching succeeded. Bazel rejected the multi-file toolchain patch because plain unified-diff file headers do not flush its pending hunks. Reproduced with repository_ctx.patch against the checksum-verified pinned archive; adding diff --git boundaries passes the same local Bazel check.

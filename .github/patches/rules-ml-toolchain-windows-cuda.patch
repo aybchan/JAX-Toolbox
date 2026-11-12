@@ -1,3 +1,4 @@
+diff --git a/gpu/nvidia_common_rules.bzl b/gpu/nvidia_common_rules.bzl
 --- a/gpu/nvidia_common_rules.bzl
 +++ b/gpu/nvidia_common_rules.bzl
 @@ -16,6 +16,7 @@
@@ -21,6 +22,8 @@
      local_redist_path = get_env_var(repository_ctx, repository_ctx.attr.local_path_env_var)
      if local_redist_path:
          use_local_redist_path(repository_ctx, local_redist_path, repository_ctx.attr.local_source_dirs)
+diff --git a/gpu/windows_cuda_redist.bzl b/gpu/windows_cuda_redist.bzl
+new file mode 100644
 --- /dev/null
 +++ b/gpu/windows_cuda_redist.bzl
 @@ -0,0 +1,184 @@
@@ -208,6 +211,7 @@
 +        content += "exports_files([%r])\n" % ("bin/" + tool + ".exe")
 +
 +    ctx.file("BUILD", content)
+diff --git a/extensions/cuda_configure.bzl b/extensions/cuda_configure.bzl
 --- a/extensions/cuda_configure.bzl
 +++ b/extensions/cuda_configure.bzl
 @@ -85,6 +85,8 @@
@@ -219,6 +223,7 @@
      cuda_configure(name = "local_config_cuda", **kwargs)
  
  _configure_tag = tag_class(
+diff --git a/gpu/cuda/BUILD.tpl b/gpu/cuda/BUILD.tpl
 --- a/gpu/cuda/BUILD.tpl
 +++ b/gpu/cuda/BUILD.tpl
 @@ -106,11 +106,14 @@
@@ -241,6 +246,7 @@
  )
  
  alias(
+diff --git a/gpu/cuda/build_defs.bzl.tpl b/gpu/cuda/build_defs.bzl.tpl
 --- a/gpu/cuda/build_defs.bzl.tpl
 +++ b/gpu/cuda/build_defs.bzl.tpl
 @@ -135,7 +135,7 @@
@@ -263,6 +269,7 @@
          implementation_deps = implementation_deps + if_cuda_hermetic_clang([
              "%{hermetic_wrappers_headers}",
          ]),
+diff --git a/gpu/cuda/cuda_configure.bzl b/gpu/cuda/cuda_configure.bzl
 --- a/gpu/cuda/cuda_configure.bzl
 +++ b/gpu/cuda/cuda_configure.bzl
 @@ -98,6 +98,10 @@
@@ -354,6 +361,7 @@
      created = False
      if enable_cuda(repository_ctx) or _is_linux_x86_64(repository_ctx):
          created = _create_local_toolchains_repository(repository_ctx)
+diff --git a/gpu/cuda/cuda_redist_versions.bzl b/gpu/cuda/cuda_redist_versions.bzl
 --- a/gpu/cuda/cuda_redist_versions.bzl
 +++ b/gpu/cuda/cuda_redist_versions.bzl
 @@ -746,6 +746,7 @@
