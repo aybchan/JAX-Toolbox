@@ -1,0 +1,157 @@
+diff --git a/xla/tsl/cuda/BUILD.bazel b/xla/tsl/cuda/BUILD.bazel
+--- a/xla/tsl/cuda/BUILD.bazel
++++ b/xla/tsl/cuda/BUILD.bazel
+@@ -69,7 +69,11 @@
+ 
+ alias(
+     name = "cublas",  # buildifier: disable=duplicated-name
+-    actual = if_cuda_libs("@cuda_cublas//:cublas", ":cublas_stub"),
++    actual = select({
++        "//xla/tsl:windows": "@cuda_cublas//:cublas",
++        "@local_config_cuda//cuda:cuda_tools_and_libs": "@cuda_cublas//:cublas",
++        "//conditions:default": ":cublas_stub",
++    }),
+     visibility = ["//visibility:public"],
+ )
+ 
+@@ -100,7 +104,11 @@
+ 
+ alias(
+     name = "cublas_lt",
+-    actual = if_cuda_libs("@cuda_cublas//:cublasLt", ":cublas_lt_stub"),
++    actual = select({
++        "//xla/tsl:windows": "@cuda_cublas//:cublasLt",
++        "@local_config_cuda//cuda:cuda_tools_and_libs": "@cuda_cublas//:cublasLt",
++        "//conditions:default": ":cublas_lt_stub",
++    }),
+     visibility = ["//visibility:public"],
+ )
+ 
+@@ -110,7 +118,7 @@
+ )
+ 
+ cc_library(
+-    name = "cuda",  # buildifier: disable=duplicated-name
++    name = "cuda_dynamic_stub",
+     srcs = if_cuda_is_configured([
+         "cuda_stub.cc",
+         "cuda.tramp.S",
+@@ -127,6 +135,15 @@
+         "@tsl//tsl/platform:dso_loader",
+         "@tsl//tsl/platform:load_library",
+     ]),
++)
++
++alias(
++    name = "cuda",
++    actual = select({
++        "//xla/tsl:windows": "@cuda_cudart//:cuda_driver",
++        "//conditions:default": ":cuda_dynamic_stub",
++    }),
++    visibility = ["//visibility:public"],
+ )
+ 
+ cuda_stub(
+@@ -170,7 +187,11 @@
+ 
+ alias(
+     name = "cudart",  # buildifier: disable=duplicated-name
+-    actual = if_cuda_libs("@cuda_cudart//:cudart", ":cudart_stub"),
++    actual = select({
++        "//xla/tsl:windows": "@cuda_cudart//:cudart",
++        "@local_config_cuda//cuda:cuda_tools_and_libs": "@cuda_cudart//:cudart",
++        "//conditions:default": ":cudart_stub",
++    }),
+     visibility = ["//visibility:public"],
+ )
+ 
+@@ -203,7 +224,11 @@
+ 
+ alias(
+     name = "cudnn",  # buildifier: disable=duplicated-name
+-    actual = if_cuda_libs("@cuda_cudnn//:cudnn", ":cudnn_stub"),
++    actual = select({
++        "//xla/tsl:windows": "@cuda_cudnn//:cudnn",
++        "@local_config_cuda//cuda:cuda_tools_and_libs": "@cuda_cudnn//:cudnn",
++        "//conditions:default": ":cudnn_stub",
++    }),
+     visibility = ["//visibility:public"],
+ )
+ 
+@@ -257,7 +282,11 @@
+ 
+ alias(
+     name = "cufft",  # buildifier: disable=duplicated-name
+-    actual = if_cuda_libs("@cuda_cufft//:cufft", ":cufft_stub"),
++    actual = select({
++        "//xla/tsl:windows": "@cuda_cufft//:cufft",
++        "@local_config_cuda//cuda:cuda_tools_and_libs": "@cuda_cufft//:cufft",
++        "//conditions:default": ":cufft_stub",
++    }),
+     visibility = ["//visibility:public"],
+ )
+ 
+@@ -295,7 +324,11 @@
+ 
+ alias(
+     name = "cupti",  # buildifier: disable=duplicated-name
+-    actual = if_cuda_libs("@cuda_cupti//:cupti", ":cupti_stub"),
++    actual = select({
++        "//xla/tsl:windows": "@cuda_cupti//:cupti",
++        "@local_config_cuda//cuda:cuda_tools_and_libs": "@cuda_cupti//:cupti",
++        "//conditions:default": ":cupti_stub",
++    }),
+     visibility = ["//visibility:public"],
+ )
+ 
+@@ -331,7 +364,11 @@
+ 
+ alias(
+     name = "cusolver",  # buildifier: disable=duplicated-name
+-    actual = if_cuda_libs("@cuda_cusolver//:cusolver", ":cusolver_stub"),
++    actual = select({
++        "//xla/tsl:windows": "@cuda_cusolver//:cusolver",
++        "@local_config_cuda//cuda:cuda_tools_and_libs": "@cuda_cusolver//:cusolver",
++        "//conditions:default": ":cusolver_stub",
++    }),
+     visibility = ["//visibility:public"],
+ )
+ 
+@@ -368,7 +405,11 @@
+ 
+ alias(
+     name = "cusparse",  # buildifier: disable=duplicated-name
+-    actual = if_cuda_libs("@cuda_cusparse//:cusparse", ":cusparse_stub"),
++    actual = select({
++        "//xla/tsl:windows": "@cuda_cusparse//:cusparse",
++        "@local_config_cuda//cuda:cuda_tools_and_libs": "@cuda_cusparse//:cusparse",
++        "//conditions:default": ":cusparse_stub",
++    }),
+     visibility = ["//visibility:public"],
+ )
+ 
+@@ -466,7 +507,10 @@
+ 
+ alias(
+     name = "nvml",  # buildifier: disable=duplicated-name
+-    actual = ":nvml_stub",
++    actual = select({
++        "//xla/tsl:windows": "@cuda_nvml//:nvml",
++        "//conditions:default": ":nvml_stub",
++    }),
+     visibility = ["//visibility:public"],
+ )
+ 
+@@ -497,6 +541,9 @@
+ 
+ alias(
+     name = "nvrtc",  # buildifier: disable=duplicated-name
+-    actual = ":nvrtc_stub",
+-    visibility = ["//visibility:public"],
+-)
++    actual = select({
++        "//xla/tsl:windows": "@cuda_nvrtc//:nvrtc",
++        "//conditions:default": ":nvrtc_stub",
++    }),
++    visibility = ["//visibility:public"],
++)

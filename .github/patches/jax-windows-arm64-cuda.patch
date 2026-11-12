@@ -9,6 +9,14 @@
      integrity = "sha256-AD+fcA+AoQ9wvsdh0AUpI30WpuIMBjEkyf/6mKjArzU=",
      strip_prefix = "rules_ml_toolchain-c0eb2743b7b12b2bbcf0e1888e26d36ba6b093de",
      urls = ["https://github.com/google-ml-infra/rules_ml_toolchain/archive/c0eb2743b7b12b2bbcf0e1888e26d36ba6b093de.tar.gz"],
+@@ -39,6 +41,7 @@
+         "//third_party/xla:llvm_windows_arm64_native_triple.patch",
+         "//third_party/xla:onednn_async_aarch64.patch",
+         "//third_party/xla:onednn_gemm_bfloat16.patch",
++        "//third_party/xla:windows_arm64_cuda.patch",
+     ],
+     integrity = "sha256-MsuAh9iDGKAfmXTq1iVOHKBtJj+hhH9hUDN5UlvUaJc=",
+     strip_prefix = "xla-91888df6ce85102c30220e41d952065925e10886",
 --- /dev/null
 +++ b/third_party/rules_ml_toolchain/BUILD.bazel
 @@ -0,0 +1 @@

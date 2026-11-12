@@ -272,18 +272,31 @@ diff --git a/gpu/cuda/build_defs.bzl.tpl b/gpu/cuda/build_defs.bzl.tpl
 diff --git a/gpu/cuda/cuda_configure.bzl b/gpu/cuda/cuda_configure.bzl
 --- a/gpu/cuda/cuda_configure.bzl
 +++ b/gpu/cuda/cuda_configure.bzl
-@@ -98,6 +98,10 @@
-         print(("Cannot find {}, either correct your path," +
-                " or set the CLANG_CUDA_COMPILER_PATH or CC" +
-                " environment variables").format(cc_name))  # buildifier: disable=print
-+    if cc and repository_ctx.os.name.lower().startswith("windows"):
-+        # MSYS realpath produces /c/... paths that native repository execution
-+        # cannot use. Keep the Windows path supplied by the local C++ toolchain.
-+        return str(repository_ctx.path(cc))
-     return None if not cc else realpath(repository_ctx, cc)
- 
- def _auto_configure_fail(msg):
-@@ -145,6 +149,9 @@
+@@ -91,6 +91,23 @@
+     ) or get_host_environ(repository_ctx, _CC)
+     if cc_name_from_env:
+         cc_name = cc_name_from_env
++    if repository_ctx.os.name.lower().startswith("windows"):
++        if len(cc_name) >= 2 and cc_name[0] == cc_name[-1] and cc_name[0] in ["\"", "'"]:
++            cc_name = cc_name[1:-1]
++        if "/" in cc_name or "\\" in cc_name or ":" in cc_name:
++            # where.exe searches executable names, not explicit compiler paths.
++            cc = repository_ctx.path(cc_name)
++            if not cc.exists:
++                cc = None
++        else:
++            cc = repository_ctx.which(cc_name)
++        if not cc:
++            _auto_configure_fail(
++                ("Cannot find {}, either correct your path, or set the " +
++                 "CLANG_CUDA_COMPILER_PATH or CC environment variables").format(cc_name),
++            )
++        # MSYS realpath produces /c/... paths that native execution cannot use.
++        return str(cc)
+     cc = which(repository_ctx, cc_name, allow_failure = True)
+     if not cc:
+         # Use print instead of fail because fail interrupts execution,
+@@ -145,6 +162,9 @@
  # Function works only in pair with non-hermetic toolchain
  def _get_clang_major_version(repository_ctx, cc):
      """Gets the major version of the clang at `cc`"""
@@ -293,7 +306,7 @@ diff --git a/gpu/cuda/cuda_configure.bzl b/gpu/cuda/cuda_configure.bzl
      cmd = "echo __clang_major__ | \"%s\" -E -P -" % cc
      result = execute(
          repository_ctx,
-@@ -337,6 +344,32 @@
+@@ -337,6 +357,32 @@
      )
  
      return copts
@@ -326,7 +339,7 @@ diff --git a/gpu/cuda/cuda_configure.bzl b/gpu/cuda/cuda_configure.bzl
  
  def _get_cuda_config(repository_ctx):
      """Detects and returns information about the CUDA installation on the system.
-@@ -556,6 +589,8 @@
+@@ -556,6 +602,8 @@
          {
              "%{cuda_is_configured}": "False",
              "%{cuda_extra_copts}": "[]",
@@ -335,7 +348,7 @@ diff --git a/gpu/cuda/cuda_configure.bzl b/gpu/cuda/cuda_configure.bzl
              "%{cuda_gpu_architectures}": "[]",
              "%{cuda_version}": "0.0",
              "%{use_hermetic_cc_toolchain}": "False",
-@@ -638,10 +673,13 @@
+@@ -638,10 +686,13 @@
          repository_ctx.attr.build_defs_tpl,
          {
              "%{cuda_is_configured}": "True",
@@ -350,7 +363,7 @@ diff --git a/gpu/cuda/cuda_configure.bzl b/gpu/cuda/cuda_configure.bzl
              "%{cuda_gpu_architectures}": str(cuda_config.compute_capabilities),
              "%{cuda_version}": cuda_config.cuda_version,
              "%{use_hermetic_cc_toolchain}": str(_use_hermetic_toolchains(repository_ctx)),
-@@ -702,6 +740,10 @@
+@@ -702,6 +753,10 @@
          _create_dummy_cuda_repository(repository_ctx)
  
  def _create_toolchains_repository(repository_ctx):

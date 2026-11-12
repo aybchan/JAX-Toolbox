@@ -78,6 +78,7 @@ jobs:
           git apply ../toolbox/.github/patches/jax-windows-arm64-cuda.patch
           New-Item -ItemType Directory -Force third_party/rules_ml_toolchain | Out-Null
           Copy-Item ../toolbox/.github/patches/rules-ml-toolchain-windows-cuda.patch third_party/rules_ml_toolchain/windows_cuda.patch
+          Copy-Item ../toolbox/.github/patches/xla-windows-arm64-cuda.patch third_party/xla/windows_arm64_cuda.patch
 
       - name: Limit Bazel configuration to the Windows ARM build
         working-directory: jax
@@ -175,7 +176,7 @@ jobs:
         working-directory: jax
         run: |
           python build/build.py build `
-            --wheels=jaxlib,jax-cuda-plugin,jax-cuda-pjrt `
+            --wheels=jax-cuda-pjrt,jax-cuda-plugin,jaxlib `
             --cuda_major_version=13 `
             --cuda_version=13.4.3 `
             --cudnn_version=9.28.1 `
@@ -280,12 +281,14 @@ jobs:
             'CUDA: 13.4.3; cuDNN: 9.28.1; NCCL: disabled'
             'Validation: ARM64 PE artifacts and CPU execution; GPU execution requires NVIDIA hardware'
             "CUDA integration patch SHA256: $((Get-FileHash ../toolbox/.github/patches/jax-windows-arm64-cuda.patch -Algorithm SHA256).Hash)"
+            "XLA CUDA patch SHA256: $((Get-FileHash ../toolbox/.github/patches/xla-windows-arm64-cuda.patch -Algorithm SHA256).Hash)"
             "CUDA toolchain patch SHA256: $((Get-FileHash ../toolbox/.github/patches/rules-ml-toolchain-windows-cuda.patch -Algorithm SHA256).Hash)"
           ) | Set-Content dist/source.txt
           Copy-Item $patch dist/
           Copy-Item ../toolbox/.github/patches/jax-windows-arm64-cuda.patch dist/
           Copy-Item ../toolbox/.github/patches/rules-ml-toolchain-windows-cuda.patch dist/
           Copy-Item ../toolbox/.github/patches/windows-cuda-redistributions.json dist/
+          Copy-Item ../toolbox/.github/patches/xla-windows-arm64-cuda.patch dist/
           Get-Content dist/source.txt >> $env:GITHUB_STEP_SUMMARY
           Get-ChildItem dist/*.whl | ForEach-Object { "- $($_.Name)" } >> $env:GITHUB_STEP_SUMMARY
 
