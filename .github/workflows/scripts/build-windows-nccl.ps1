@@ -100,7 +100,7 @@ foreach ($line in $environmentLines) {
         [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2], 'Process')
     }
 }
-$compiler = (Get-Command cl.exe -CommandType Application -ErrorAction Stop).Source
+$compiler = (Get-Command cl.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 $nvcc = Join-Path $CudaPath 'bin/nvcc.exe'
 Assert-Arm64Pe $nvcc
 foreach ($relative in @('include/cuda_runtime.h', 'include/cccl/cuda/std/version',
@@ -128,8 +128,8 @@ if ($probeBytes.Length -lt 20 -or [BitConverter]::ToUInt16($probeBytes, 0) -ne 0
 
 # The runner or Visual Studio provides CMake/Ninja; no CUDA VS integration is needed.
 $visualStudio = Split-Path $VcDirectory
-$cmakeCommand = Get-Command cmake.exe -CommandType Application -ErrorAction SilentlyContinue
-$ninjaCommand = Get-Command ninja.exe -CommandType Application -ErrorAction SilentlyContinue
+$cmakeCommand = Get-Command cmake.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+$ninjaCommand = Get-Command ninja.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
 $cmake = if ($cmakeCommand) { $cmakeCommand.Source } else {
     Join-Path $visualStudio 'Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe'
 }
@@ -141,7 +141,7 @@ Require-File $ninja
 Invoke-Checked $cmake @('--version')
 Invoke-Checked $ninja @('--version')
 Invoke-Checked $nvcc @('--version')
-$python = (Get-Command python.exe -CommandType Application -ErrorAction Stop).Source
+$python = (Get-Command python.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 
 # Use forward slashes for CMake cache values, including paths with spaces.
 $sourceCmake = $SourceRoot.Replace('\', '/')

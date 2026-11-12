@@ -89,3 +89,7 @@ NCCL iteration 1: implementation ready for the first native CI build.
 - Complete JAX, rules_ml_toolchain, and XLA patches apply cleanly. Native Bazel patching and repository analysis pass; ten selector cases and five runtime dependency cases preserve enable/disable behavior.
 - Windows uses the existing ordinary ragged all-to-all fallback; only the unsupported experimental GIN device kernel is excluded.
 - Native NCCL compilation, final PJRT linkage, installed DLL loading, and real artifacts remain pending CI.
+
+### Iteration 1 — 15d92ad3
+
+Run `43240511726` failed during native SDK setup. The ARM64 MSVC probe passed, but PowerShell returned both CMake installations; the script treated the resulting array as one executable path. No NCCL compilation or wheel build ran. Select one executable in PATH order for each native tool before retrying.
