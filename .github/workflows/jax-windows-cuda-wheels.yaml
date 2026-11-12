@@ -473,7 +473,9 @@ jobs:
         working-directory: ${{ runner.temp }}
         run: |
           $script = Join-Path $env:GITHUB_WORKSPACE 'toolbox/.github/workflows/scripts/verify-windows-nccl.py'
-          python $script installed --expected-version 23206
+          # A fresh process must import the CUDA package before JAX or PJRT.
+          python $script installed --sdk-root C:/nccl --expected-version 23206
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Test the installed wheels on ARM64
         working-directory: ${{ runner.temp }}

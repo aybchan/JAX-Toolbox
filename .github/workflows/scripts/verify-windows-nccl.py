@@ -9,6 +9,7 @@ import argparse
 from contextlib import ExitStack
 import ctypes
 import hashlib
+import importlib
 import importlib.util
 import json
 import mmap
@@ -267,7 +268,9 @@ def query_version(path, expected_version, *, by_name=False):
     require(os.name == 'nt', 'Native NCCL version checks require Windows')
     # Keep directory handles alive through loading and both API calls.
     with ExitStack() as stack:
-        for variable in ('CUDA_PATH', 'CUDNN_PATH', 'NCCL_PATH'):
+        # By-name loading must rely on the installed package's registration.
+        variables = () if by_name else ('CUDA_PATH', 'CUDNN_PATH', 'NCCL_PATH')
+        for variable in variables:
             root = os.environ.get(variable)
             if root:
                 for relative in ('bin', 'bin/arm64', 'lib/arm64'):
@@ -296,9 +299,11 @@ def query_version(path, expected_version, *, by_name=False):
         return {'loaded_library': str(loaded), 'runtime_version': version.value}
 
 
-def inspect_installed(expected_version):
+def inspect_installed(sdk_root, expected_version):
     require(os.name == 'nt', 'Installed NCCL loading checks require Windows')
-    roots = {Path('C:/nccl').resolve()}
+    # This inspection reads files only; it must not load NCCL or register its SDK.
+    sdk = inspect_sdk(sdk_root, expected_version)
+    roots = {sdk_root.resolve()}
     for variable in ('NCCL_PATH', 'LOCAL_NCCL_PATH'):
         value = os.environ.pop(variable, None)
         if value:
@@ -310,10 +315,12 @@ def inspect_installed(expected_version):
     require(spec is not None and spec.submodule_search_locations, 'CUDA plugin package is not installed')
     candidates = [Path(directory) / 'nccl.dll' for directory in spec.submodule_search_locations]
     require(len(candidates) == 1 and candidates[0].is_file(), 'Installed CUDA plugin is missing its NCCL DLL')
-    from jaxlib.plugin_support import initialize_windows_cuda_dll_search_path
-    initialize_windows_cuda_dll_search_path()
+    digest = sha256(candidates[0])
+    require(digest == sdk['nccl_sha256'], 'Installed NCCL SHA256 differs from verified SDK')
+    # Exercise the actual initializer before JAX/PJRT can register DLL paths.
+    package = importlib.import_module('jax_cuda13_plugin')
     result = query_version(candidates[0], expected_version, by_name=True)
-    result['nccl_sha256'] = sha256(candidates[0])
+    result.update(nccl_sha256=digest, sdk_root=sdk['sdk_root'], package_imported=package.__name__)
     return result
 
 
@@ -323,8 +330,7 @@ def main():
     for mode in ('sdk', 'wheels', 'installed'):
         command = modes.add_parser(mode)
         command.add_argument('--expected-version', type=int, default=23206)
-        if mode in ('sdk', 'wheels'):
-            command.add_argument('--sdk-root', type=Path, required=True)
+        command.add_argument('--sdk-root', type=Path, required=True)
         if mode == 'wheels':
             command.add_argument('--wheel-dir', type=Path, required=True)
     args = parser.parse_args()
@@ -334,7 +340,7 @@ def main():
     elif args.mode == 'wheels':
         result = inspect_wheels(args.wheel_dir, args.sdk_root, args.expected_version)
     else:
-        result = inspect_installed(args.expected_version)
+        result = inspect_installed(args.sdk_root, args.expected_version)
     result.update(status='PASS', mode=args.mode, gpu_collective_execution_tested=False)
     print(json.dumps(result, indent=2))
 

@@ -1,11 +1,17 @@
-"""Portable PE/package checks; these fixtures do not execute Windows code."""
+"""Portable PE/package checks; native DLL calls are mocked only in import tests."""
+from contextlib import contextmanager
 import hashlib
+import importlib
 import importlib.util
 import json
+import os
 import pathlib
 import struct
+import sys
 import tempfile
+from types import ModuleType, SimpleNamespace
 import unittest
+from unittest import mock
 import zipfile
 
 SCRIPT = pathlib.Path(__file__).resolve().parent.parent / 'verify-windows-nccl.py'
@@ -207,6 +213,86 @@ class NcclVerificationTests(unittest.TestCase):
         (self.sdk / 'include/nccl_device/gin_win_stub.h').unlink()
         with self.assertRaisesRegex(ValueError, 'gin_win_stub.h'):
             self.nccl.inspect_sdk(self.sdk, 23206)
+
+    @contextmanager
+    def installed_package(self, initializer):
+        """Real isolated package imports; the DLL load is a test-only stand-in."""
+        site = self.root / 'site-packages'
+        package = site / 'jax_cuda13_plugin'
+        package.mkdir(parents=True)
+        (package / '__init__.py').write_text(initializer)
+        (package / 'nccl.dll').write_bytes((self.sdk / 'bin/nccl.dll').read_bytes())
+        support = site / 'jaxlib'
+        support.mkdir()
+        (support / '__init__.py').write_text('')
+        (support / 'plugin_support.py').write_text(
+            'import _nccl_installed_fixture as state\n'
+            'def initialize_windows_cuda_dll_search_path():\n'
+            '    state.registered = True\n')
+        state = ModuleType('_nccl_installed_fixture')
+        state.registered = False
+        names = ('jax_cuda13_plugin', 'jaxlib', '_nccl_installed_fixture')
+        saved = {key: value for key, value in sys.modules.items()
+                 if any(key == name or key.startswith(name + '.') for name in names)}
+        for key in saved:
+            del sys.modules[key]
+        sys.modules['_nccl_installed_fixture'] = state
+        sys.path.insert(0, str(site))
+        importlib.invalidate_caches()
+
+        def native_query(path, version, *, by_name=False):
+            self.assertTrue(by_name)
+            self.assertEqual(path, package / 'nccl.dll')
+            if not state.registered:
+                raise OSError('Fixture package did not register its DLL directory')
+            return {'loaded_library': str(path.resolve()), 'runtime_version': version}
+
+        environment = {'NCCL_PATH': str(self.sdk), 'LOCAL_NCCL_PATH': str(self.sdk),
+                       'PATH': os.pathsep.join((str(self.sdk / 'bin'), str(self.root / 'other')))}
+        try:
+            with mock.patch.dict(os.environ, environment, clear=True), \
+                 mock.patch.object(self.nccl, 'os', SimpleNamespace(
+                     name='nt', environ=os.environ, pathsep=os.pathsep)), \
+                 mock.patch.object(self.nccl, 'query_version', side_effect=native_query) as query:
+                yield package, query
+        finally:
+            sys.path.remove(str(site))
+            for key in list(sys.modules):
+                if any(key == name or key.startswith(name + '.') for name in names):
+                    del sys.modules[key]
+            sys.modules.update(saved)
+            importlib.invalidate_caches()
+
+    def test_installed_package_initializer_registers_before_native_load(self):
+        with self.installed_package(
+                'from jaxlib.plugin_support import initialize_windows_cuda_dll_search_path\n'
+                'initialize_windows_cuda_dll_search_path()\n') as (package, query):
+            result = self.nccl.inspect_installed(self.sdk, 23206)
+            self.assertTrue('jax_cuda13_plugin' in sys.modules, 'CUDA package initializer was not executed')
+            self.assertEqual(result['nccl_sha256'], self.nccl.inspect_sdk(self.sdk, 23206)['nccl_sha256'])
+            query.assert_called_once_with(package / 'nccl.dll', 23206, by_name=True)
+            self.assertNotIn('NCCL_PATH', os.environ)
+            self.assertNotIn('LOCAL_NCCL_PATH', os.environ)
+            self.assertEqual(os.environ['PATH'], str(self.root / 'other'))
+
+    def test_installed_empty_initializer_cannot_pass_via_direct_helper_call(self):
+        with self.installed_package(''):
+            with self.assertRaisesRegex(OSError, 'did not register'):
+                self.nccl.inspect_installed(self.sdk, 23206)
+
+    def test_installed_broken_initializer_is_not_bypassed(self):
+        with self.installed_package("raise RuntimeError('broken installed initializer')\n") as (_, query):
+            with self.assertRaisesRegex(RuntimeError, 'broken installed initializer'):
+                self.nccl.inspect_installed(self.sdk, 23206)
+            query.assert_not_called()
+
+    def test_installed_hash_must_match_verified_sdk_before_loading(self):
+        with self.installed_package('') as (package, query):
+            dll = package / 'nccl.dll'
+            dll.write_bytes(dll.read_bytes() + b'different installed payload')
+            with self.assertRaisesRegex(ValueError, 'SHA256.*SDK'):
+                self.nccl.inspect_installed(self.sdk, 23206)
+            query.assert_not_called()
 
 
 if __name__ == '__main__':

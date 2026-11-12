@@ -108,8 +108,16 @@ Continue NCCL development only on `aybchan/feat/windows-build-cuda-nccl`, preser
 
 ### Iteration 3 — 24fec4e7
 
-The new-branch run `43244507192` built NCCL on native Windows ARM64, passed SDK import-library/export/provenance checks and the DLL loading/version query, and saved the verified SDK cache. CUDA/NCCL collective preflight compilation passed at 17:36 UTC; the full wheel build is running.
+The new-branch run `43244507192` built NCCL on native Windows ARM64, passed SDK import-library/export/provenance checks and the DLL loading/version query, and saved the verified SDK cache. CUDA/NCCL collective preflight compilation passed at 17:36 UTC. The real Windows ARM64 CUDA PJRT wheel was built at 19:37 UTC; the CUDA kernel plugin then failed analysis because the root module did not expose `@cuda_nccl`. No complete four-wheel artifact was produced. The Bazel cache and diagnostics were saved successfully.
 
 A production wheel-input audit found that the JAX root module had not imported the `cuda_nccl` repository used by `jax_plugin_sources.static_srcs`. A native Bazel fixture reproduces the missing apparent-repository mapping and verifies that importing the existing NCCL extension exposes both runtime files. The next iteration imports that shared extension in JAX and includes `jax_plugin_sources` in the existing preflight, so packaging-input resolution is checked before the full wheel build.
 
 Queue subsequent runs on `feat/windows-build-cuda-nccl` behind the active run by disabling cancellation for that branch while keeping the same concurrency group. This lets prepared fixes be pushed without interrupting compilation and skipping the cache save. Pull request refs and other branch refs retain their existing cancellation behavior. GitHub keeps the latest pending run in the group; the active run continues.
+
+### Iteration 4 — d12946f7
+
+Run `43292286617` queued behind iteration 3 and started after its cache save and cleanup. It restored the exact native NCCL SDK cache, skipped recompilation, and passed SDK verification. Bazel cache restoration succeeded. The new wheel-builder runfiles check failed before CUDA/NCCL preflight or the full wheel build. Cache saving and diagnostic collection are still running; the cause must be established from those diagnostics.
+
+A completion review identified two gaps in the installed-runtime check: it called the DLL-directory helper directly instead of importing the actual installed CUDA package, and it reported the installed DLL hash without asserting equality with the verified SDK. The next check imports `jax_cuda13_plugin` in a fresh process before importing JAX/PJRT, then loads NCCL by name, verifies the loaded path and version, and requires the installed DLL hash to match the verified SDK. This requires no GPU. A nominal PJRT-first import would also initialize the CUDA package through JAX imports, so it would not independently prove that registration path.
+
+All 29 workflow-script tests pass, including four regressions that reject the previous installed-check behavior. Python, YAML, and PowerShell syntax checks pass. Independent review found no remaining defects in this validation change; native installed-package execution remains pending CI.
