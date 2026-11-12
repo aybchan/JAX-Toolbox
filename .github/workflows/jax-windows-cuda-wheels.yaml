@@ -34,7 +34,8 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
-  cancel-in-progress: true
+  # Queue NCCL branch updates so the running build can finish saving its cache.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/feat/windows-build-cuda-nccl' }}
 
 jobs:
   build-cuda:
