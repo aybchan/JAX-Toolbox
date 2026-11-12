@@ -35,7 +35,7 @@
 - [x] Inspect upstream Windows CMake paths and reproduce concrete source problems with focused compiler probes where possible.
 - [x] Configure native ARM64 MSVC/NVCC, explicitly select the matching GPU architectures, build the shared NCCL target, and stage its actual headers, DLL, import library, license, and version manifest.
 - [x] Fail on unsuccessful native commands, missing outputs, source/version mismatch, or incorrect target architecture.
-- [ ] Validate the script and any patch locally where possible; obtain the decisive compiler result from native CI.
+- [x] Validate the script and any patch locally where possible; obtain the decisive compiler result from native CI.
 
 ### Task 2: Enable NCCL in the Windows Bazel/XLA path
 
@@ -97,3 +97,9 @@ Run `43240511726` failed during native SDK setup. The ARM64 MSVC probe passed, b
 ### Branch split requested on November 12
 
 Continue NCCL development only on `aybchan/feat/windows-build-cuda-nccl`, preserving commits `15d92ad3` and `96f7ec57`. Restore `aybchan/feat/windows-build-cuda` to the pre-NCCL commit `44c101c77e5f9f5999c41efb0b25de983d818e15`. This supersedes the earlier hillclimb branch destination; the CUDA-only implementation plan remains historical.
+
+### Iteration 3 — 24fec4e7
+
+The new-branch run `43244507192` built NCCL on native Windows ARM64, passed SDK import-library/export/provenance checks and the DLL loading/version query, and saved the verified SDK cache. CUDA/NCCL collective preflight compilation is still running.
+
+A production wheel-input audit found that the JAX root module had not imported the `cuda_nccl` repository used by `jax_plugin_sources.static_srcs`. A native Bazel fixture reproduces the missing apparent-repository mapping and verifies that importing the existing NCCL extension exposes both runtime files. The next iteration imports that shared extension in JAX and includes `jax_plugin_sources` in the existing preflight, so packaging-input resolution is checked before the full wheel build.

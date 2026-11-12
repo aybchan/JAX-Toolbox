@@ -1,3 +1,4 @@
+diff --git a/MODULE.bazel b/MODULE.bazel
 --- a/MODULE.bazel
 +++ b/MODULE.bazel
 @@ -15,6 +15,12 @@
@@ -46,6 +47,16 @@
      ],
      version = "20260526.0",
  )
+@@ -262,6 +273,9 @@
+     "cuda_nvvm",
+ )
+ 
++nccl_redist = use_extension("@rules_ml_toolchain//extensions:nccl_redist.bzl", "nccl_redist_ext")
++use_repo(nccl_redist, "cuda_nccl")
++
+ nvshmem_redist = use_extension("@rules_ml_toolchain//extensions:nvshmem_redist.bzl", "nvshmem_redist_ext")
+ use_repo(nvshmem_redist, "nvidia_nvshmem")
+ 
 --- /dev/null
 +++ b/third_party/rules_ml_toolchain/BUILD.bazel
 @@ -0,0 +1 @@

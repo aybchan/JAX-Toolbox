@@ -326,8 +326,8 @@ jobs:
 
       - name: Compile CUDA kernels and NCCL collectives on ARM64
         working-directory: jax
-        # Exercise device kernels, Triton dialects, and extension linking before
-        # the full PJRT graph, retaining their outputs for the wheel build.
+        # Exercise device kernels, extension linking, and wheel-source inputs
+        # before the full PJRT graph, retaining their outputs for the wheel build.
         run: |
           & .\bazel-8.7.0-windows-arm64.exe `
             --output_user_root=C:/b --batch `
@@ -339,6 +339,7 @@ jobs:
             '@xla//xla/backends/gpu/collectives:gpu_collectives_plugin' `
             '@xla//xla/backends/gpu/collectives:nccl_collectives' `
             '@xla//xla/backends/gpu/collectives:nccl_communicator' `
+            '//jaxlib/tools:jax_plugin_sources' `
             '@xla//xla/stream_executor/cuda:cub_sort_kernel_cuda_type_bf16' `
             '@xla//xla/stream_executor/cuda:cub_scan_kernel_cuda_impl' `
             '@xla//xla/stream_executor/cuda:buffer_comparator_kernel_cuda' `
