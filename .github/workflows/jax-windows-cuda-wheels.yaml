@@ -3,7 +3,7 @@ name: Build JAX Windows ARM64 CUDA wheels
 on:
   push:
     branches:
-      - feat/windows-build-cuda
+      - feat/windows-build-cuda-nccl
     paths:
       - '.github/workflows/jax-windows-cuda-wheels.yaml'
       - '.github/patches/jax-windows-arm64.patch'

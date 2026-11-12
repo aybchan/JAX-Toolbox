@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Use the source pins, SDK layout, GPU targets, and completion evidence in the spec.
-- Push only `aybchan/feat/windows-build-cuda`; preserve the original shared checkout.
+- Push only `aybchan/feat/windows-build-cuda-nccl`; preserve the original shared checkout.
 - Never claim GPU collective execution from a successful build, CPU test, or version query.
 - Retain native patch section boundaries and validate both Git and Bazel patch application.
 - No fabricated CUDA/NCCL implementations or silent disabling of ordinary collectives.
@@ -93,3 +93,7 @@ NCCL iteration 1: implementation ready for the first native CI build.
 ### Iteration 1 — 15d92ad3
 
 Run `43240511726` failed during native SDK setup. The ARM64 MSVC probe passed, but PowerShell returned both CMake installations; the script treated the resulting array as one executable path. No NCCL compilation or wheel build ran. Select one executable in PATH order for each native tool before retrying.
+
+### Branch split requested on November 12
+
+Continue NCCL development only on `aybchan/feat/windows-build-cuda-nccl`, preserving commits `15d92ad3` and `96f7ec57`. Restore `aybchan/feat/windows-build-cuda` to the pre-NCCL commit `44c101c77e5f9f5999c41efb0b25de983d818e15`. This supersedes the earlier hillclimb branch destination; the CUDA-only implementation plan remains historical.

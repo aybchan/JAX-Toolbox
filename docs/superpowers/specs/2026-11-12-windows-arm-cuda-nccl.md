@@ -1,6 +1,6 @@
 # Windows ARM64 CUDA and NCCL wheels
 
-Extend the successful CUDA build at `44c101c77e5f9f5999c41efb0b25de983d818e15` with genuine NCCL support. Iterate on GitHub Actions failures until the wheels build, install, and pass package validation. Push only to `aybchan/feat/windows-build-cuda`.
+Extend the successful CUDA build at `44c101c77e5f9f5999c41efb0b25de983d818e15` with genuine NCCL support. Iterate on GitHub Actions failures until the wheels build, install, and pass package validation. Push only to `aybchan/feat/windows-build-cuda-nccl`.
 
 ## Build contract
 
