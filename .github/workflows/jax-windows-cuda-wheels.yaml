@@ -190,7 +190,7 @@ jobs:
             --bazel_startup_options=--batch `
             --bazel_startup_options=--host_jvm_args=-Djava.library.path=C:/b/jni `
             --bazel_startup_options=--host_jvm_args=-XX:ErrorFile=C:/b/diagnostics/hs_err_pid%p.log `
-            --bazel_startup_options=--host_jvm_args=-Xlog:library=debug:file=C:/b/diagnostics/jvm-libraries.log `
+            --bazel_startup_options=--host_jvm_args=-Xlog:library=debug `
             --bazel_options=--config=ci_windows_arm64 `
             --bazel_options=--define=no_cuda_support=false `
             --bazel_options=--repo_env=LOCAL_CUDA_PATH=C:/cuda `
@@ -215,7 +215,6 @@ jobs:
           Get-Content "$diagnostics/windows-events.txt"
           Get-ChildItem "$diagnostics/hs_err_pid*.log" -ErrorAction SilentlyContinue |
             ForEach-Object { Get-Content $_.FullName -TotalCount 140 }
-          Get-Content "$diagnostics/jvm-libraries.log" -Tail 80 -ErrorAction SilentlyContinue
           foreach ($outputBase in Get-ChildItem C:/b -Directory -ErrorAction SilentlyContinue) {
             foreach ($relative in @('java.log', 'server/jvm.out', 'command.log')) {
               $source = Join-Path $outputBase.FullName $relative
