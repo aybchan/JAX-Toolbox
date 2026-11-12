@@ -236,6 +236,7 @@ jobs:
             '--bazel_options=--repo_env=LOCAL_CUDA_PATH=C:/cuda'
             '--bazel_options=--repo_env=LOCAL_CUDNN_PATH=C:/cudnn'
             '--bazel_options=--disk_cache=C:/b/disk-cache'
+            '--bazel_options=--keep_going'
             '--bazel_options=--jobs=4'
             '--bazel_options=--local_resources=memory=HOST_RAM*0.5'
             '--output_path=dist'
@@ -255,7 +256,7 @@ jobs:
             --host_jvm_args=-Djava.library.path=C:/b/jni `
             --host_jvm_args=-XX:ErrorFile=C:/b/diagnostics/hs_err_pid%p.log `
             --host_jvm_args=-Xlog:library=debug `
-            build --config=cuda_libraries_from_stubs --disk_cache=C:/b/disk-cache `
+            build --keep_going --config=cuda_libraries_from_stubs --disk_cache=C:/b/disk-cache `
             '@xla//xla/stream_executor/cuda:cub_sort_kernel_cuda_type_bf16' `
             '@xla//xla/stream_executor/cuda:cub_scan_kernel_cuda_impl' `
             '@xla//xla/stream_executor/cuda:buffer_comparator_kernel_cuda' `
