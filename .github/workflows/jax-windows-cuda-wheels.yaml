@@ -258,6 +258,7 @@ jobs:
             build --config=cuda_libraries_from_stubs --disk_cache=C:/b/disk-cache `
             '@xla//xla/stream_executor/cuda:cub_sort_kernel_cuda_type_bf16' `
             '@xla//xla/stream_executor/cuda:cub_scan_kernel_cuda_impl' `
+            '@xla//xla/stream_executor/cuda:buffer_comparator_kernel_cuda' `
             '//jaxlib/cuda:cuda_make_batch_pointers' `
             '//jaxlib/cuda:cuda_prng_kernels_impl' `
             '//jaxlib/cuda:cuda_householder_kernels' `

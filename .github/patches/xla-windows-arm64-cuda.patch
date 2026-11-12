@@ -305,3 +305,15 @@ diff --git a/xla/stream_executor/cuda/BUILD b/xla/stream_executor/cuda/BUILD
          "@tsl//tsl/platform:platform_port",
      ],
  )
+diff --git a/xla/stream_executor/gpu/buffer_comparator_kernel_lib.cu.h b/xla/stream_executor/gpu/buffer_comparator_kernel_lib.cu.h
+--- a/xla/stream_executor/gpu/buffer_comparator_kernel_lib.cu.h
++++ b/xla/stream_executor/gpu/buffer_comparator_kernel_lib.cu.h
+@@ -109,7 +109,7 @@
+       elem_b = static_cast<uint64_t>(buffer_b[idx]);
+     }
+     float rel_error =
+-        fabs(elem_a - elem_b) / (fmax(fabs(elem_a), fabs(elem_b)) + 1);
++        fabs(elem_a - elem_b) / (fmaxf(fabs(elem_a), fabs(elem_b)) + 1);
+     if (rel_error > rel_error_threshold || isnan(rel_error)) {
+       atomicAdd(mismatch_count, 1);
+     }
