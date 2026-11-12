@@ -313,12 +313,14 @@
 +++ b/third_party/rules_cc/BUILD.bazel
 @@ -0,0 +1 @@
 +exports_files(["windows_cuda.patch"])
+diff --git a/jaxlib/plugin_support.py b/jaxlib/plugin_support.py
 --- a/jaxlib/plugin_support.py
 +++ b/jaxlib/plugin_support.py
-@@ -14,11 +14,33 @@
+@@ -14,11 +14,51 @@
  
  from collections.abc import Sequence
  import importlib
++import importlib.util
 +import os
 +import pathlib
  import re
@@ -336,7 +338,24 @@
 +  """Register toolkit DLL directories before importing CUDA extensions."""
 +  if os.name != "nt":
 +    return
-+  for variable in ("CUDA_PATH", "CUDNN_PATH"):
++  # A top-level spec lookup does not execute the package, including when its
++  # __init__ calls this helper before importing CUDA extensions.
++  bundled_nccl = False
++  spec = importlib.util.find_spec("jax_cuda13_plugin")
++  if spec is not None and spec.submodule_search_locations:
++    for location in spec.submodule_search_locations:
++      directory = pathlib.Path(location).resolve()
++      if not (directory / "nccl.dll").is_file():
++        continue
++      bundled_nccl = True
++      if directory not in _windows_cuda_dll_directories:
++        _windows_cuda_dll_directories[directory] = os.add_dll_directory(
++            str(directory)
++        )
++  for variable in ("CUDA_PATH", "CUDNN_PATH", "NCCL_PATH"):
++    # AddDllDirectory does not define ordering between registered directories.
++    if variable == "NCCL_PATH" and bundled_nccl:
++      continue
 +    root = os.environ.get(variable)
 +    if not root:
 +      continue
@@ -349,13 +368,35 @@
  
  
  _PLUGIN_MODULE_NAMES = {
+diff --git a/jaxlib/tools/build_gpu_kernels_wheel.py b/jaxlib/tools/build_gpu_kernels_wheel.py
 --- a/jaxlib/tools/build_gpu_kernels_wheel.py
 +++ b/jaxlib/tools/build_gpu_kernels_wheel.py
-@@ -135,7 +135,13 @@
+@@ -92,6 +92,19 @@
+ [bdist_wheel]
+ plat_name={tag}
+ """)
++
++
++def _copy_windows_nccl_runtime(plugin_dir, copy_files, wheel_sources):
++  """Bundle NCCL from declared Bazel inputs alongside the CUDA extensions."""
++  if build_utils.is_windows():
++    prefix = "" if wheel_sources else "cuda_nccl/"
++    copy_files(
++        src_files=[
++            f"{prefix}runtime/nccl.dll",
++            f"{prefix}runtime/LICENSE.nccl.txt",
++        ],
++        dst_dir=plugin_dir,
++    )
+ 
+ 
+ def prepare_wheel_cuda(
+@@ -135,7 +148,14 @@
  
    plugin_dir = wheel_sources_path / f"jax_cuda{cuda_version}_plugin"
    plugin_dir.mkdir(parents=True, exist_ok=True)
 -  (plugin_dir / "__init__.py").touch()
++  _copy_windows_nccl_runtime(plugin_dir, copy_files, wheel_sources)
 +  (plugin_dir / "__init__.py").write_text(
 +      "import sys\n"
 +      "\n"
@@ -449,3 +490,25 @@ diff --git a/jaxlib/cuda/BUILD b/jaxlib/cuda/BUILD
          "@xla//xla/tsl/cuda:cupti",
          "@xla//xla/tsl/cuda:cusolver",
          "@xla//xla/tsl/cuda:cusparse",
+diff --git a/jaxlib/tools/BUILD.bazel b/jaxlib/tools/BUILD.bazel
+--- a/jaxlib/tools/BUILD.bazel
++++ b/jaxlib/tools/BUILD.bazel
+@@ -38,6 +38,7 @@
+     "deploy_wheel",
+     "get_test_suite_list",
+     "if_pypi_cuda_wheel_deps",
++    "if_windows",
+     "jax_wheel",
+     "pytype_strict_library",
+     "pytype_test",
+@@ -247,7 +248,9 @@
+     ]),
+     static_srcs = [
+         "LICENSE.txt",
+-    ] + if_cuda([
++    ] + if_windows([
++        "@cuda_nccl//:nccl_runtime_files",
++    ]) + if_cuda([
+         "//jax_plugins/cuda:plugin_pyproject.toml",
+         "//jax_plugins/cuda:plugin_setup.py",
+     ]) + if_rocm([

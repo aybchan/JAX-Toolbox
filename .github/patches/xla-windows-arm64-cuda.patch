@@ -78,7 +78,20 @@ diff --git a/xla/tsl/cuda/BUILD.bazel b/xla/tsl/cuda/BUILD.bazel
      visibility = ["//visibility:public"],
  )
  
-@@ -257,7 +282,11 @@
+@@ -215,7 +240,11 @@
+ 
+ alias(
+     name = "nccl_rpath",
+-    actual = if_cuda_libs("@cuda_nccl//:nccl", ":nccl_rpath_flags"),
++    actual = select({
++        "//xla/tsl:windows": "@cuda_nccl//:nccl",
++        "@local_config_cuda//cuda:cuda_tools_and_libs": "@cuda_nccl//:nccl",
++        "//conditions:default": ":nccl_rpath_flags",
++    }),
+     visibility = ["//visibility:public"],
+ )
+ 
+@@ -257,7 +286,11 @@
  
  alias(
      name = "cufft",  # buildifier: disable=duplicated-name
@@ -91,7 +104,7 @@ diff --git a/xla/tsl/cuda/BUILD.bazel b/xla/tsl/cuda/BUILD.bazel
      visibility = ["//visibility:public"],
  )
  
-@@ -295,7 +324,11 @@
+@@ -295,7 +328,11 @@
  
  alias(
      name = "cupti",  # buildifier: disable=duplicated-name
@@ -104,7 +117,7 @@ diff --git a/xla/tsl/cuda/BUILD.bazel b/xla/tsl/cuda/BUILD.bazel
      visibility = ["//visibility:public"],
  )
  
-@@ -331,7 +364,11 @@
+@@ -331,7 +368,11 @@
  
  alias(
      name = "cusolver",  # buildifier: disable=duplicated-name
@@ -117,7 +130,7 @@ diff --git a/xla/tsl/cuda/BUILD.bazel b/xla/tsl/cuda/BUILD.bazel
      visibility = ["//visibility:public"],
  )
  
-@@ -368,7 +405,11 @@
+@@ -368,7 +409,11 @@
  
  alias(
      name = "cusparse",  # buildifier: disable=duplicated-name
@@ -130,7 +143,20 @@ diff --git a/xla/tsl/cuda/BUILD.bazel b/xla/tsl/cuda/BUILD.bazel
      visibility = ["//visibility:public"],
  )
  
-@@ -466,7 +507,10 @@
+@@ -403,7 +448,11 @@
+ 
+ alias(
+     name = "nccl",  # buildifier: disable=duplicated-name
+-    actual = if_cuda_libs("@cuda_nccl//:nccl", ":nccl_stub"),
++    actual = select({
++        "//xla/tsl:windows": "@cuda_nccl//:nccl",
++        "@local_config_cuda//cuda:cuda_tools_and_libs": "@cuda_nccl//:nccl",
++        "//conditions:default": ":nccl_stub",
++    }),
+     visibility = ["//visibility:public"],
+ )
+ 
+@@ -466,7 +515,10 @@
  
  alias(
      name = "nvml",  # buildifier: disable=duplicated-name
@@ -142,7 +168,7 @@ diff --git a/xla/tsl/cuda/BUILD.bazel b/xla/tsl/cuda/BUILD.bazel
      visibility = ["//visibility:public"],
  )
  
-@@ -497,6 +541,9 @@
+@@ -497,6 +549,9 @@
  
  alias(
      name = "nvrtc",  # buildifier: disable=duplicated-name
@@ -305,6 +331,23 @@ diff --git a/xla/stream_executor/cuda/BUILD b/xla/stream_executor/cuda/BUILD
          "@tsl//tsl/platform:platform_port",
      ],
  )
+@@ -1774,9 +1775,14 @@
+         "//xla/tsl/cuda:tensorrt_rpath",
+     ] + if_nccl([
+         ":multi_gpu_barrier_kernel_cuda",
+-        ":ragged_all_to_all_device_kernel_cuda",
+         ":ragged_all_to_all_kernel_cuda",
+-    ]),
++    ]) + select({
++        # Native Windows NCCL does not expose the GIN device operations used
++        # by this experimental kernel. The thunk uses its existing fallback.
++        "//xla/tsl:windows": [],
++        "//xla/tsl:no_nccl_support": [],
++        "//conditions:default": [":ragged_all_to_all_device_kernel_cuda"],
++    }),
+     alwayslink = 1,
+ )
+ 
 diff --git a/xla/stream_executor/gpu/buffer_comparator_kernel_lib.cu.h b/xla/stream_executor/gpu/buffer_comparator_kernel_lib.cu.h
 --- a/xla/stream_executor/gpu/buffer_comparator_kernel_lib.cu.h
 +++ b/xla/stream_executor/gpu/buffer_comparator_kernel_lib.cu.h
@@ -682,3 +725,56 @@ new file mode 100644
 + template <>
 + struct IOType<double, 1> {
 +   typedef double Type;
+diff --git a/xla/tsl/BUILD b/xla/tsl/BUILD
+--- a/xla/tsl/BUILD
++++ b/xla/tsl/BUILD
+@@ -216,6 +216,15 @@
+     constraint_values = [
+         "@platforms//os:windows",
+     ],
++    visibility = ["//visibility:public"],
++)
++
++# Windows NCCL is enabled only when explicitly requested by a native build.
++config_setting(
++    name = "windows_nccl",
++    constraint_values = ["@platforms//os:windows"],
++    define_values = {"no_nccl_support": "false"},
++    flag_values = {":no_nccl_support_flag": "false"},
+     visibility = ["//visibility:public"],
+ )
+ 
+diff --git a/xla/tsl/tsl.bzl b/xla/tsl/tsl.bzl
+--- a/xla/tsl/tsl.bzl
++++ b/xla/tsl/tsl.bzl
+@@ -241,10 +241,12 @@
+         "//conditions:default": [],
+     })
+ 
+-# Enabled unless Windows or actively disabled, even without --config=cuda.
++# Enabled unless actively disabled or Windows without an explicit native opt-in,
++# even without --config=cuda.
+ # Combine with 'if_gpu_is_configured' (XLA) or 'if_cuda_or_rocm' (otherwise).
+ def if_nccl(if_true, if_false = []):
+     return select({
++        clean_dep("//xla/tsl:windows_nccl"): if_true,
+         clean_dep("//xla/tsl:no_nccl_support"): if_false,
+         clean_dep("//xla/tsl:windows"): if_false,
+         "//conditions:default": if_true,
+diff --git a/xla/backends/gpu/runtime/ragged_all_to_all_thunk.h b/xla/backends/gpu/runtime/ragged_all_to_all_thunk.h
+--- a/xla/backends/gpu/runtime/ragged_all_to_all_thunk.h
++++ b/xla/backends/gpu/runtime/ragged_all_to_all_thunk.h
+@@ -181,7 +181,13 @@
+   }
+ 
+   bool UsesDeviceKernel() const {
++#if defined(_WIN32)
++    // Native Windows NCCL does not implement the GIN device operations used
++    // by this kernel. Preserve the ordinary collective/one-shot fallback.
++    return false;
++#else
+     return config_.use_device_kernel && config_.config.use_symmetric_buffer;
++#endif
+   }
+ 
+   // Number of per-CTA barrier/signal slots reserved when creating the device

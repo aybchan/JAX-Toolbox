@@ -26,7 +26,7 @@ diff --git a/gpu/windows_cuda_redist.bzl b/gpu/windows_cuda_redist.bzl
 new file mode 100644
 --- /dev/null
 +++ b/gpu/windows_cuda_redist.bzl
-@@ -0,0 +1,184 @@
+@@ -0,0 +1,222 @@
 +"""Native Windows ARM64 CUDA imports from an explicitly staged local toolkit.
 +
 +The installer must write windows_cuda_versions.json in LOCAL_CUDA_PATH and
@@ -113,10 +113,48 @@ new file mode 100644
 +        "include_prefix = %r, strip_include_prefix = %r, includes = [%r])\n" % (prefix, strip, strip)
 +    )
 +
++def _create_windows_nccl_repository(ctx, header):
++    root = ctx.getenv("LOCAL_NCCL_PATH")
++    if ctx.os.arch not in ["aarch64", "arm64"]:
++        fail("This local NCCL dependency configuration requires a Windows ARM64 host")
++    for path in ["include/nccl.h", "include/nccl_device.h", "lib/nccl.lib", "bin/nccl.dll", "LICENSE.txt", "windows_cuda_versions.json"]:
++        _required(ctx, root, path)
++    versions = json.decode(ctx.read(root + "/windows_cuda_versions.json"))
++    version = versions.get("cuda_nccl")
++    if not version:
++        fail("No installed component version for cuda_nccl in " + root)
++    components = {}
++    for line in ctx.read(root + "/include/nccl.h").splitlines():
++        fields = [field for field in line.replace("\t", " ").split(" ") if field]
++        if len(fields) >= 3 and fields[0] == "#define" and fields[1] in ["NCCL_MAJOR", "NCCL_MINOR", "NCCL_PATCH"]:
++            components[fields[1]] = fields[2]
++    header_version = ".".join([components.get(key, "") for key in ["NCCL_MAJOR", "NCCL_MINOR", "NCCL_PATCH"]])
++    if header_version != version:
++        fail("NCCL header version " + header_version + " does not match staged version " + version)
++    requested = ctx.getenv("HERMETIC_NCCL_VERSION")
++    if requested and requested != version:
++        fail("HERMETIC_NCCL_VERSION=" + requested + " does not match staged NCCL " + version)
++    for directory in ["include", "lib"]:
++        ctx.symlink(root + "/" + directory, directory)
++    ctx.symlink(root + "/bin/nccl.dll", "runtime/nccl.dll")
++    ctx.symlink(root + "/LICENSE.txt", "runtime/LICENSE.nccl.txt")
++    ctx.file("version.bzl", "VERSION = %r\n" % version.split(".")[0])
++    content = header
++    content += 'cc_import(name = "nccl_shared_library", interface_library = "lib/nccl.lib", shared_library = "runtime/nccl.dll")\n'
++    content += 'cc_library(name = "headers", hdrs = glob(["include/**/*.h", "include/**/*.cuh"], allow_empty = True), include_prefix = "third_party/nccl", strip_include_prefix = "include", includes = ["include"], defines = ["NCCL_OS_WINDOWS=1"], deps = ["@local_config_cuda//cuda:cuda_headers"])\n'
++    content += _library("nccl", [":nccl_shared_library", ":headers"])
++    content += _filegroup("nccl_runtime_files", ["runtime/nccl.dll", "runtime/LICENSE.nccl.txt"])
++    content += 'exports_files(["runtime/LICENSE.nccl.txt"])\n'
++    ctx.file("BUILD", content)
++
 +def create_windows_cuda_repository(ctx):
 +    """Create native import targets. Called only for explicit local Windows builds."""
 +    name = _repo_name(ctx)
 +    header = 'load("@rules_cc//cc:defs.bzl", "cc_import", "cc_library")\npackage(default_visibility = ["//visibility:public"])\n'
++
++    if name == "cuda_nccl" and ctx.getenv("LOCAL_NCCL_PATH"):
++        _create_windows_nccl_repository(ctx, header)
++        return
 +
 +    # Never let unsupported collective libraries silently compile as no-ops.
 +    # Consumers must exclude these dependencies in their Windows selects.
@@ -403,3 +441,62 @@ diff --git a/gpu/cuda/cuda_redist_versions.bzl b/gpu/cuda/cuda_redist_versions.b
      },
  }
  
+diff --git a/gpu/nccl/nccl_redist_init_repository.bzl b/gpu/nccl/nccl_redist_init_repository.bzl
+--- a/gpu/nccl/nccl_redist_init_repository.bzl
++++ b/gpu/nccl/nccl_redist_init_repository.bzl
+@@ -15,6 +15,7 @@
+ """Hermetic NCCL repositories initialization. Consult the WORKSPACE on how to use it."""
+ 
+ load("//common:repo.bzl", "tf_mirror_urls")
++load("//gpu:windows_cuda_redist.bzl", "create_windows_cuda_repository")
+ load(
+     "//gpu:nvidia_common_rules.bzl",
+     "OS_ARCH_DICT",
+@@ -123,6 +124,9 @@
+     create_version_file(repository_ctx, major_version)
+ 
+ def _cuda_nccl_repo_impl(repository_ctx):
++    if "windows" in repository_ctx.os.name.lower():
++        create_windows_cuda_repository(repository_ctx)
++        return
+     local_nccl_path = get_env_var(repository_ctx, "LOCAL_NCCL_PATH")
+     if local_nccl_path:
+         use_local_redist_path(repository_ctx, local_nccl_path, repository_ctx.attr.local_source_dirs)
+diff --git a/gpu/nccl/nccl_configure.bzl b/gpu/nccl/nccl_configure.bzl
+--- a/gpu/nccl/nccl_configure.bzl
++++ b/gpu/nccl/nccl_configure.bzl
+@@ -27,6 +27,21 @@
+ )
+ 
+ _TF_NCCL_USE_STUB = "TF_NCCL_USE_STUB"
++
++_NCCL_WINDOWS_BUILD_CONTENT = """
++load("@rules_cc//cc:defs.bzl", "cc_library")
++
++package(default_visibility = ["//visibility:public"])
++
++filegroup(name = "LICENSE", srcs = ["@cuda_nccl//:runtime/LICENSE.nccl.txt"])
++alias(name = "nccl", actual = "@cuda_nccl//:nccl")
++alias(name = "nccl_headers", actual = "@cuda_nccl//:headers")
++cc_library(
++    name = "nccl_config",
++    hdrs = ["nccl_config.h"],
++    include_prefix = "third_party/nccl",
++)
++"""
+ 
+ _NCCL_DUMMY_BUILD_CONTENT = """
+ filegroup(
+@@ -163,6 +178,12 @@
+     repository_ctx.file("nccl_config.h", "#define TF_NCCL_VERSION \"%s\"" % nccl_version)
+ 
+ def _nccl_autoconf_impl(repository_ctx):
++    if (enable_cuda(repository_ctx) and
++        "windows" in repository_ctx.os.name.lower() and
++        repository_ctx.getenv("LOCAL_NCCL_PATH")):
++        repository_ctx.file("BUILD", _NCCL_WINDOWS_BUILD_CONTENT)
++        repository_ctx.file("nccl_config.h", "#define TF_NCCL_VERSION \"%s\"" % _nccl_version)
++        return
+     if (not enable_cuda(repository_ctx) or
+         get_cpu_value(repository_ctx) != "Linux"):
+         # Add a dummy build file to make bazel query happy.

@@ -9,8 +9,11 @@ on:
       - '.github/patches/jax-windows-arm64.patch'
       - '.github/workflows/scripts/build-windows-jni.ps1'
       - '.github/workflows/scripts/install-windows-cuda.py'
+      - '.github/workflows/scripts/build-windows-nccl.ps1'
+      - '.github/workflows/scripts/verify-windows-nccl.py'
       - '.github/workflows/scripts/trim-bazel-disk-cache.py'
       - '.github/patches/*cuda*'
+      - '.github/patches/*nccl*'
   workflow_dispatch:
   pull_request:
     paths:
@@ -18,8 +21,11 @@ on:
       - '.github/patches/jax-windows-arm64.patch'
       - '.github/workflows/scripts/build-windows-jni.ps1'
       - '.github/workflows/scripts/install-windows-cuda.py'
+      - '.github/workflows/scripts/build-windows-nccl.ps1'
+      - '.github/workflows/scripts/verify-windows-nccl.py'
       - '.github/workflows/scripts/trim-bazel-disk-cache.py'
       - '.github/patches/*cuda*'
+      - '.github/patches/*nccl*'
 
 permissions:
   contents: read
@@ -156,6 +162,77 @@ jobs:
           & C:/cuda/bin/nvcc.exe --version
           Get-PSDrive C
 
+      - name: Check out native Windows NCCL sources
+        uses: actions/checkout@v6
+        with:
+          repository: NVIDIA/nccl
+          ref: ad2d192c1f279aefcaf340f67e07880b65a1116b
+          path: nccl-source
+          persist-credentials: false
+
+      - name: Identify the native NCCL SDK cache
+        id: nccl-cache-identity
+        continue-on-error: true
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          if (-not $env:ImageVersion) { throw 'Runner ImageVersion is required for the NCCL cache' }
+          $inputs = @(
+            './toolbox/.github/workflows/scripts/build-windows-nccl.ps1'
+            './toolbox/.github/patches/windows-cuda-redistributions.json'
+            'C:/cuda/bin/nvcc.exe'
+          )
+          $patch = './toolbox/.github/patches/nccl-windows-arm64.patch'
+          if (Test-Path $patch) { $inputs += $patch }
+          $identity = ($inputs | ForEach-Object { (Get-FileHash $_ -Algorithm SHA256).Hash }) -join ':'
+          $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($identity))).Substring(0, 20)
+          "key=windows-arm64-nccl-v1-$env:ImageVersion-ad2d192c1f279aefcaf340f67e07880b65a1116b-$hash" >> $env:GITHUB_OUTPUT
+
+      - name: Restore the verified native NCCL SDK
+        id: nccl-cache-restore
+        if: steps.nccl-cache-identity.outcome == 'success'
+        uses: actions/cache/restore@v5
+        continue-on-error: true
+        with:
+          path: C:/nccl
+          key: ${{ steps.nccl-cache-identity.outputs.key }}
+
+      - name: Build native Windows ARM64 NCCL
+        if: steps.nccl-cache-restore.outputs.cache-hit != 'true'
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          New-Item -ItemType Directory -Force C:/b/diagnostics | Out-Null
+          $patch = './toolbox/.github/patches/nccl-windows-arm64.patch'
+          if (Test-Path $patch) {
+            $patch = (Resolve-Path $patch).Path
+            git -C nccl-source apply --check $patch
+            git -C nccl-source apply $patch
+          }
+          Start-Transcript -Path C:/b/diagnostics/nccl-build.log
+          try {
+            ./toolbox/.github/workflows/scripts/build-windows-nccl.ps1 `
+              -SourceRoot ./nccl-source -BuildRoot C:/b/nccl `
+              -CudaPath C:/cuda -InstallPrefix C:/nccl -Jobs 4
+          } finally {
+            Stop-Transcript
+          }
+
+      - name: Verify the native NCCL SDK
+        id: nccl-sdk-verify
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          python ./toolbox/.github/workflows/scripts/verify-windows-nccl.py sdk `
+            --sdk-root C:/nccl --expected-version 23206
+          "NCCL_PATH=C:/nccl" >> $env:GITHUB_ENV
+          "LOCAL_NCCL_PATH=C:/nccl" >> $env:GITHUB_ENV
+
+      - name: Save the verified native NCCL SDK
+        if: steps.nccl-cache-identity.outcome == 'success' && steps.nccl-sdk-verify.outcome == 'success' && steps.nccl-cache-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: C:/nccl
+          key: ${{ steps.nccl-cache-identity.outputs.key }}
+
       - name: Download the native Bazel pinned by JAX
         working-directory: jax
         # The PR's downloader selects Windows ARM64 and verifies its SHA256.
@@ -221,7 +298,7 @@ jobs:
             '--cuda_version=13.4.3'
             '--cudnn_version=9.28.1'
             '--build_cuda_with_clang'
-            '--disable_nccl'
+            '--nccl_version=2.32.6'
             "--python_version=$env:PYTHON_VERSION"
             '--bazel_path=.\bazel-8.7.0-windows-arm64.exe'
             "--clang_path=$env:JAX_CLANG_PATH"
@@ -233,8 +310,10 @@ jobs:
             '--bazel_startup_options=--host_jvm_args=-Xlog:library=debug'
             '--bazel_options=--config=ci_windows_arm64'
             '--bazel_options=--define=no_cuda_support=false'
+            '--bazel_options=--define=no_nccl_support=false'
             '--bazel_options=--repo_env=LOCAL_CUDA_PATH=C:/cuda'
             '--bazel_options=--repo_env=LOCAL_CUDNN_PATH=C:/cudnn'
+            '--bazel_options=--repo_env=LOCAL_NCCL_PATH=C:/nccl'
             '--bazel_options=--disk_cache=C:/b/disk-cache'
             '--bazel_options=--keep_going'
             '--bazel_options=--jobs=4'
@@ -245,7 +324,7 @@ jobs:
           $buildArgs | ConvertTo-Json | Set-Content C:/b/build-args.json
           python build/build.py @buildArgs --configure_only
 
-      - name: Compile and link CUDA kernels on ARM64
+      - name: Compile CUDA kernels and NCCL collectives on ARM64
         working-directory: jax
         # Exercise device kernels, Triton dialects, and extension linking before
         # the full PJRT graph, retaining their outputs for the wheel build.
@@ -257,6 +336,9 @@ jobs:
             --host_jvm_args=-XX:ErrorFile=C:/b/diagnostics/hs_err_pid%p.log `
             --host_jvm_args=-Xlog:library=debug `
             build --keep_going --config=cuda_libraries_from_stubs --disk_cache=C:/b/disk-cache `
+            '@xla//xla/backends/gpu/collectives:gpu_collectives_plugin' `
+            '@xla//xla/backends/gpu/collectives:nccl_collectives' `
+            '@xla//xla/backends/gpu/collectives:nccl_communicator' `
             '@xla//xla/stream_executor/cuda:cub_sort_kernel_cuda_type_bf16' `
             '@xla//xla/stream_executor/cuda:cub_scan_kernel_cuda_impl' `
             '@xla//xla/stream_executor/cuda:buffer_comparator_kernel_cuda' `
@@ -312,6 +394,12 @@ jobs:
           $events | Format-List TimeCreated, ProviderName, Id, Message |
             Out-String -Width 240 | Set-Content "$diagnostics/windows-events.txt"
           Get-Content "$diagnostics/windows-events.txt"
+          foreach ($relative in @('CMakeCache.txt', 'CMakeFiles/CMakeConfigureLog.yaml', '.ninja_log')) {
+            $source = Join-Path C:/b/nccl $relative
+            if (Test-Path $source) {
+              Copy-Item $source (Join-Path $diagnostics "nccl-$($relative.Replace('/', '-'))")
+            }
+          }
           Get-ChildItem "$diagnostics/hs_err_pid*.log" -ErrorAction SilentlyContinue |
             ForEach-Object { Get-Content $_.FullName -TotalCount 140 }
           foreach ($outputBase in Get-ChildItem C:/b -Directory -ErrorAction SilentlyContinue) {
@@ -361,6 +449,12 @@ jobs:
           }
           $wheels = @($jaxWheel[0].FullName, $jaxlibWheel[0].FullName, $cudaPlugin[0].FullName, $cudaPjrt[0].FullName)
           python -m pip install --only-binary=:all: $wheels
+
+      - name: Verify the installed bundled NCCL runtime
+        working-directory: ${{ runner.temp }}
+        run: |
+          $script = Join-Path $env:GITHUB_WORKSPACE 'toolbox/.github/workflows/scripts/verify-windows-nccl.py'
+          python $script installed --expected-version 23206
 
       - name: Test the installed wheels on ARM64
         working-directory: ${{ runner.temp }}
@@ -414,6 +508,12 @@ jobs:
               print(wheel.name, native_count, "ARM64 native binaries")
           print("GPU execution is not tested on the hosted runner; CUDA wheels were built and checked as Windows ARM64 PE binaries.")
 
+      - name: Verify NCCL linkage and wheel payloads
+        working-directory: jax
+        run: |
+          python ../toolbox/.github/workflows/scripts/verify-windows-nccl.py wheels `
+            --wheel-dir dist --sdk-root C:/nccl --expected-version 23206
+
       - name: Record wheel sources
         working-directory: jax
         run: |
@@ -426,8 +526,10 @@ jobs:
             "JAX-Toolbox workflow commit: $env:GITHUB_SHA"
             "Integration patch SHA256: $((Get-FileHash $patch -Algorithm SHA256).Hash)"
             "Python: $(python --version)"
-            'CUDA: 13.4.3; cuDNN: 9.28.1; NCCL: disabled'
-            'Validation: ARM64 PE artifacts and CPU execution; GPU execution requires NVIDIA hardware'
+            'CUDA: 13.4.3; cuDNN: 9.28.1; NCCL: 2.32.6 enabled'
+            'NCCL source: https://github.com/NVIDIA/nccl/commit/ad2d192c1f279aefcaf340f67e07880b65a1116b'
+            "NCCL DLL SHA256: $((Get-FileHash C:/nccl/bin/nccl.dll -Algorithm SHA256).Hash)"
+            'Validation: ARM64 PE artifacts, NCCL linkage/version/loading, and CPU execution; GPU collectives require hardware validation'
             "CUDA integration patch SHA256: $((Get-FileHash ../toolbox/.github/patches/jax-windows-arm64-cuda.patch -Algorithm SHA256).Hash)"
             "XLA CUDA patch SHA256: $((Get-FileHash ../toolbox/.github/patches/xla-windows-arm64-cuda.patch -Algorithm SHA256).Hash)"
             "CUDA toolchain patch SHA256: $((Get-FileHash ../toolbox/.github/patches/rules-ml-toolchain-windows-cuda.patch -Algorithm SHA256).Hash)"
@@ -443,17 +545,23 @@ jobs:
           Copy-Item ../toolbox/.github/patches/protobuf-windows-cuda.patch dist/
           Copy-Item ../toolbox/.github/patches/windows-cuda-redistributions.json dist/
           Copy-Item ../toolbox/.github/patches/xla-windows-arm64-cuda.patch dist/
+          Copy-Item C:/nccl/build-info.json dist/windows-nccl-build.json
+          Copy-Item C:/nccl/LICENSE.txt dist/LICENSE.nccl.txt
+          $ncclPatch = '../toolbox/.github/patches/nccl-windows-arm64.patch'
+          if (Test-Path $ncclPatch) { Copy-Item $ncclPatch dist/ }
           Get-Content dist/source.txt >> $env:GITHUB_STEP_SUMMARY
           Get-ChildItem dist/*.whl | ForEach-Object { "- $($_.Name)" } >> $env:GITHUB_STEP_SUMMARY
 
       - name: Upload tested wheels
         uses: actions/upload-artifact@v6
         with:
-          name: jax-windows-arm64-cuda13-py${{ env.PYTHON_VERSION }}
+          name: jax-windows-arm64-cuda13-nccl-py${{ env.PYTHON_VERSION }}
           path: |
             jax/dist/*.whl
             jax/dist/source.txt
             jax/dist/*.patch
             jax/dist/windows-cuda-redistributions.json
+            jax/dist/windows-nccl-build.json
+            jax/dist/LICENSE.nccl.txt
           if-no-files-found: error
           retention-days: 14
