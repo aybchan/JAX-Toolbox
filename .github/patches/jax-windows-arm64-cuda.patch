@@ -30,7 +30,15 @@
      ],
      integrity = "sha256-MsuAh9iDGKAfmXTq1iVOHKBtJj+hhH9hUDN5UlvUaJc=",
      strip_prefix = "xla-91888df6ce85102c30220e41d952065925e10886",
-@@ -137,6 +146,7 @@
+@@ -127,6 +136,7 @@
+     patches = [
+         "//third_party/protobuf:protobuf_arena.patch",
+         "//third_party/protobuf:fix_message_lite_incomplete_type.patch",
++        "//third_party/protobuf:windows_cuda.patch",
+     ],
+     version = "32.1",
+ )
+@@ -137,6 +147,7 @@
      patches = [
          "//third_party/absl:btree.patch",
          "//third_party/absl:raw_hash_set.patch",

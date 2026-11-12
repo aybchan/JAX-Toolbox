@@ -83,6 +83,7 @@ jobs:
           New-Item -ItemType Directory -Force third_party/rules_cc | Out-Null
           Copy-Item ../toolbox/.github/patches/rules-cc-windows-cuda.patch third_party/rules_cc/windows_cuda.patch
           Copy-Item ../toolbox/.github/patches/abseil-windows-cuda.patch third_party/absl/windows_cuda.patch
+          Copy-Item ../toolbox/.github/patches/protobuf-windows-cuda.patch third_party/protobuf/windows_cuda.patch
           Copy-Item ../toolbox/.github/patches/xla-windows-arm64-cuda.patch third_party/xla/windows_arm64_cuda.patch
 
       - name: Limit Bazel configuration to the Windows ARM build
@@ -256,6 +257,7 @@ jobs:
             --host_jvm_args=-Xlog:library=debug `
             build --config=cuda_libraries_from_stubs --disk_cache=C:/b/disk-cache `
             '@xla//xla/stream_executor/cuda:cub_sort_kernel_cuda_type_bf16' `
+            '@xla//xla/stream_executor/cuda:cub_scan_kernel_cuda_impl' `
             '//jaxlib/cuda:cuda_make_batch_pointers' `
             '//jaxlib/cuda:cuda_prng_kernels_impl' `
             '//jaxlib/cuda:cuda_householder_kernels' `
@@ -419,12 +421,14 @@ jobs:
             "CUDA toolchain patch SHA256: $((Get-FileHash ../toolbox/.github/patches/rules-ml-toolchain-windows-cuda.patch -Algorithm SHA256).Hash)"
             "Windows compiler patch SHA256: $((Get-FileHash ../toolbox/.github/patches/rules-cc-windows-cuda.patch -Algorithm SHA256).Hash)"
             "Abseil CUDA patch SHA256: $((Get-FileHash ../toolbox/.github/patches/abseil-windows-cuda.patch -Algorithm SHA256).Hash)"
+            "Protobuf CUDA patch SHA256: $((Get-FileHash ../toolbox/.github/patches/protobuf-windows-cuda.patch -Algorithm SHA256).Hash)"
           ) | Set-Content dist/source.txt
           Copy-Item $patch dist/
           Copy-Item ../toolbox/.github/patches/jax-windows-arm64-cuda.patch dist/
           Copy-Item ../toolbox/.github/patches/rules-ml-toolchain-windows-cuda.patch dist/
           Copy-Item ../toolbox/.github/patches/rules-cc-windows-cuda.patch dist/
           Copy-Item ../toolbox/.github/patches/abseil-windows-cuda.patch dist/
+          Copy-Item ../toolbox/.github/patches/protobuf-windows-cuda.patch dist/
           Copy-Item ../toolbox/.github/patches/windows-cuda-redistributions.json dist/
           Copy-Item ../toolbox/.github/patches/xla-windows-arm64-cuda.patch dist/
           Get-Content dist/source.txt >> $env:GITHUB_STEP_SUMMARY
