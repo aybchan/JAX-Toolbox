@@ -386,7 +386,7 @@ diff --git a/third_party/triton/oss_only/build_files.patch b/third_party/triton/
 diff --git a/third_party/rmm/workspace.bzl b/third_party/rmm/workspace.bzl
 --- a/third_party/rmm/workspace.bzl
 +++ b/third_party/rmm/workspace.bzl
-@@ -44,5 +44,10 @@
+@@ -44,5 +44,11 @@
          strip_prefix = "rmm-{version}".format(version = RMM_VERSION),
          urls = tf_mirror_urls("https://github.com/rapidsai/rmm/archive/refs/tags/v{version}.tar.gz".format(version = RMM_VERSION)),
          build_file = "//third_party/rmm:rmm.BUILD",
@@ -396,6 +396,7 @@ diff --git a/third_party/rmm/workspace.bzl b/third_party/rmm/workspace.bzl
 +            # Bazel does not consume this metadata file; on case-insensitive
 +            # filesystems it shadows the C++ standard library <version> header.
 +            "//third_party/rmm:exclude_version.patch",
++            "//third_party/rmm:remove_unused_dlfcn.patch",
 +        ],
      )
 diff --git a/third_party/rmm/exclude_version.patch b/third_party/rmm/exclude_version.patch
@@ -435,3 +436,20 @@ new file mode 100644
 ++++ /dev/null
 +@@ -1 +0,0 @@
 +-0.2.3
+diff --git a/third_party/rmm/remove_unused_dlfcn.patch b/third_party/rmm/remove_unused_dlfcn.patch
+new file mode 100644
+--- /dev/null
++++ b/third_party/rmm/remove_unused_dlfcn.patch
+@@ -0,0 +1,12 @@
++diff --git a/cpp/include/rmm/detail/runtime_capabilities.hpp b/cpp/include/rmm/detail/runtime_capabilities.hpp
++--- a/cpp/include/rmm/detail/runtime_capabilities.hpp
+++++ b/cpp/include/rmm/detail/runtime_capabilities.hpp
++@@ -9,8 +9,6 @@
++ #include <rmm/detail/export.hpp>
++ 
++ #include <cuda_runtime_api.h>
++-
++-#include <dlfcn.h>
++ 
++ namespace RMM_NAMESPACE {
++ namespace detail {
