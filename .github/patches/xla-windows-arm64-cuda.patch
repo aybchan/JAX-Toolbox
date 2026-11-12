@@ -383,3 +383,55 @@ diff --git a/third_party/triton/oss_only/build_files.patch b/third_party/triton/
  +    }),
  +    includes = ["include"],
  +    deps = [
+diff --git a/third_party/rmm/workspace.bzl b/third_party/rmm/workspace.bzl
+--- a/third_party/rmm/workspace.bzl
++++ b/third_party/rmm/workspace.bzl
+@@ -44,5 +44,10 @@
+         strip_prefix = "rmm-{version}".format(version = RMM_VERSION),
+         urls = tf_mirror_urls("https://github.com/rapidsai/rmm/archive/refs/tags/v{version}.tar.gz".format(version = RMM_VERSION)),
+         build_file = "//third_party/rmm:rmm.BUILD",
+-        patch_file = ["//third_party/rmm:logger_macros.hpp.patch"],
++        patch_file = [
++            "//third_party/rmm:logger_macros.hpp.patch",
++            # Bazel does not consume this metadata file; on case-insensitive
++            # filesystems it shadows the C++ standard library <version> header.
++            "//third_party/rmm:exclude_version.patch",
++        ],
+     )
+diff --git a/third_party/rmm/exclude_version.patch b/third_party/rmm/exclude_version.patch
+new file mode 100644
+--- /dev/null
++++ b/third_party/rmm/exclude_version.patch
+@@ -0,0 +1,6 @@
++diff --git a/VERSION b/VERSION
++deleted file mode 100644
++--- a/VERSION
+++++ /dev/null
++@@ -1 +0,0 @@
++-26.02.00
+diff --git a/third_party/rapids_logger/workspace.bzl b/third_party/rapids_logger/workspace.bzl
+--- a/third_party/rapids_logger/workspace.bzl
++++ b/third_party/rapids_logger/workspace.bzl
+@@ -44,5 +44,10 @@
+         strip_prefix = "rapids-logger-{version}".format(version = RAPIDS_LOGGER_VERSION),
+         urls = tf_mirror_urls("https://github.com/rapidsai/rapids-logger/archive/refs/tags/v{version}.tar.gz".format(version = RAPIDS_LOGGER_VERSION)),
+         build_file = "//third_party/rapids_logger:rapids_logger.BUILD",
+-        patch_file = ["//third_party/rapids_logger:smoke_test.cc.patch"],
++        patch_file = [
++            "//third_party/rapids_logger:smoke_test.cc.patch",
++            # Bazel does not consume this metadata file; on case-insensitive
++            # filesystems it shadows the C++ standard library <version> header.
++            "//third_party/rapids_logger:exclude_version.patch",
++        ],
+     )
+diff --git a/third_party/rapids_logger/exclude_version.patch b/third_party/rapids_logger/exclude_version.patch
+new file mode 100644
+--- /dev/null
++++ b/third_party/rapids_logger/exclude_version.patch
+@@ -0,0 +1,6 @@
++diff --git a/VERSION b/VERSION
++deleted file mode 100644
++--- a/VERSION
+++++ /dev/null
++@@ -1 +0,0 @@
++-0.2.3
