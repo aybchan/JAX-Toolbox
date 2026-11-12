@@ -317,3 +317,14 @@ diff --git a/xla/stream_executor/gpu/buffer_comparator_kernel_lib.cu.h b/xla/str
      if (rel_error > rel_error_threshold || isnan(rel_error)) {
        atomicAdd(mismatch_count, 1);
      }
+diff --git a/xla/stream_executor/cuda/buffer_debug_float_check_kernel_cuda.cu.cc b/xla/stream_executor/cuda/buffer_debug_float_check_kernel_cuda.cu.cc
+--- a/xla/stream_executor/cuda/buffer_debug_float_check_kernel_cuda.cu.cc
++++ b/xla/stream_executor/cuda/buffer_debug_float_check_kernel_cuda.cu.cc
+@@ -19,6 +19,7 @@
+ #include "absl/base/casts.h"
+ #include "Eigen/Core"
+ #include "third_party/gpus/cuda/include/cuda/atomic"
++#include "third_party/gpus/cuda/include/cuda_bf16.h"
+ #include "third_party/gpus/cuda/include/cuda_fp16.h"
+ #include "xla/stream_executor/cuda/cuda_platform_id.h"
+ #include "xla/stream_executor/gpu/buffer_debug_float_check_kernel.h"
