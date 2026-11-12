@@ -155,3 +155,110 @@ diff --git a/xla/tsl/cuda/BUILD.bazel b/xla/tsl/cuda/BUILD.bazel
 +    }),
 +    visibility = ["//visibility:public"],
 +)
+diff --git a/xla/stream_executor/cuda/cudnn_api_wrappers.cc b/xla/stream_executor/cuda/cudnn_api_wrappers.cc
+--- a/xla/stream_executor/cuda/cudnn_api_wrappers.cc
++++ b/xla/stream_executor/cuda/cudnn_api_wrappers.cc
+@@ -14,8 +14,6 @@
+ ==============================================================================*/
+ 
+ #include "xla/stream_executor/cuda/cudnn_api_wrappers.h"
+-
+-#include <sys/resource.h>
+ 
+ #include <string>
+ 
+diff --git a/xla/pjrt/pjrt_api.cc b/xla/pjrt/pjrt_api.cc
+--- a/xla/pjrt/pjrt_api.cc
++++ b/xla/pjrt/pjrt_api.cc
+@@ -23,6 +23,7 @@
+ #include "absl/container/flat_hash_map.h"
+ #include "absl/log/log.h"
+ #include "absl/status/status.h"
++#include "absl/status/status_macros.h"
+ #include "absl/status/statusor.h"
+ #include "absl/strings/ascii.h"
+ #include "absl/strings/numbers.h"
+@@ -32,10 +33,15 @@
+ #include "xla/pjrt/c/pjrt_c_api_status_utils.h"
+ #include "xla/tsl/platform/errors.h"
+ 
+-#if !defined(PLATFORM_WINDOWS)
++#if defined(PLATFORM_WINDOWS)
++#ifndef NOMINMAX
++#define NOMINMAX
++#endif
++#include <windows.h>
++#undef ERROR
++#include "tsl/platform/load_library.h"
++#else
+ #include <dlfcn.h>
+-
+-#include "absl/status/status_macros.h"
+ #endif
+ 
+ namespace pjrt {
+@@ -101,8 +107,19 @@
+ absl::StatusOr<const PJRT_Api*> LoadPjrtPlugin(absl::string_view device_type,
+                                                absl::string_view library_path) {
+ #ifdef PLATFORM_WINDOWS
+-  return absl::UnimplementedError(
+-      "LoadPjrtPlugin is not implemented on windows yet.");
++  void* library = nullptr;
++  ABSL_RETURN_IF_ERROR(tsl::internal::LoadDynamicLibrary(
++      std::string(library_path).c_str(), &library));
++  void* symbol = nullptr;
++  absl::Status symbol_status =
++      tsl::internal::GetSymbolFromLibrary(library, "GetPjrtApi", &symbol);
++  if (!symbol_status.ok()) {
++    FreeLibrary(static_cast<HMODULE>(library));
++    return absl::NotFoundError(
++        absl::StrCat("GetPjrtApi not found in ", library_path, ": ",
++                     symbol_status.message()));
++  }
++  PjrtApiInitFn init_fn = reinterpret_cast<PjrtApiInitFn>(symbol);
+ #else
+   void* library = dlopen(library_path.data(), RTLD_LAZY);
+   if (library == nullptr) {
+@@ -116,12 +133,13 @@
+     return absl::NotFoundError(
+         absl::StrCat("GetPjrtApi not found in ", library_path));
+   }
++#endif
++  // Keep the library loaded for the lifetime of its registered PJRT API.
+   LOG(INFO) << "GetPjrtApi was found for " << device_type << " at "
+             << library_path;
+   const PJRT_Api* api = init_fn();
+   ABSL_RETURN_IF_ERROR(SetPjrtApi(device_type, api));
+   return api;
+-#endif
+ }
+ 
+ absl::StatusOr<bool> IsPjrtPluginInitialized(absl::string_view device_type) {
+diff --git a/xla/pjrt/pjrt_api_test.cc b/xla/pjrt/pjrt_api_test.cc
+--- a/xla/pjrt/pjrt_api_test.cc
++++ b/xla/pjrt/pjrt_api_test.cc
+@@ -54,6 +54,13 @@
+                   HasSubstr("PJRT_Api not found for device type tpu")));
+ }
+ 
++TEST(PjRtApiTest, MissingPluginReportsLibraryPath) {
++  const std::string path = "pjrt_missing_plugin_for_test.dll";
++  auto result = pjrt::LoadPjrtPlugin("missing_plugin", path);
++  EXPECT_FALSE(result.ok());
++  EXPECT_THAT(result.status().message(), HasSubstr(path));
++}
++
+ TEST(PjRtApiTest, InitPjRtPlugin) {
+   PJRT_Api api;
+   api.struct_size = PJRT_Api_STRUCT_SIZE;
+diff --git a/xla/pjrt/BUILD b/xla/pjrt/BUILD
+--- a/xla/pjrt/BUILD
++++ b/xla/pjrt/BUILD
+@@ -335,6 +335,7 @@
+         "//xla/pjrt/c:pjrt_c_api_hdrs",
+         "//xla/pjrt/c:pjrt_c_api_status_utils",
+         "//xla/tsl/platform:errors",
++        "@tsl//tsl/platform:load_library",
+         "@com_google_absl//absl/container:flat_hash_map",
+         "@com_google_absl//absl/log",
+         "@com_google_absl//absl/status",
