@@ -124,6 +124,16 @@ jobs:
           $llvmBin >> $env:GITHUB_PATH
           & $clang --version
 
+          # Bazel 8.7 targets Java 21. Use the installed native runtime after
+          # intermittent access violations in its embedded Windows ARM JVM.
+          $jdk = $env:JAVA_HOME_21_AARCH64
+          if (-not $jdk -or -not (Test-Path "$jdk/bin/java.exe")) {
+            throw 'The native ARM64 JDK 21 was not found'
+          }
+          New-Item -ItemType Directory -Force C:/b | Out-Null
+          New-Item -ItemType Junction -Path C:/b/jdk -Target $jdk | Out-Null
+          & C:/b/jdk/bin/java.exe -XshowSettings:properties -version
+
           # The runner includes MSYS2, but does not put it on PATH.
           $msysBin = 'C:\msys64\usr\bin'
           & "$msysBin\pacman.exe" -Sy --noconfirm --needed patch coreutils
@@ -192,6 +202,7 @@ jobs:
             "--clang_path=$env:JAX_CLANG_PATH"
             '--bazel_startup_options=--output_user_root=C:/b'
             '--bazel_startup_options=--batch'
+            '--bazel_startup_options=--server_javabase=C:/b/jdk'
             '--bazel_startup_options=--host_jvm_args=-Djava.library.path=C:/b/jni'
             '--bazel_startup_options=--host_jvm_args=-XX:ErrorFile=C:/b/diagnostics/hs_err_pid%p.log'
             '--bazel_startup_options=--host_jvm_args=-Xlog:library=debug'
@@ -214,6 +225,7 @@ jobs:
         run: |
           & .\bazel-8.7.0-windows-arm64.exe `
             --output_user_root=C:/b --batch `
+            --server_javabase=C:/b/jdk `
             --host_jvm_args=-Djava.library.path=C:/b/jni `
             --host_jvm_args=-XX:ErrorFile=C:/b/diagnostics/hs_err_pid%p.log `
             --host_jvm_args=-Xlog:library=debug `
