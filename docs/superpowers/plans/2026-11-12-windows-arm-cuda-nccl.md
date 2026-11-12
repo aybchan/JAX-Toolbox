@@ -46,7 +46,7 @@
 - [x] Replace incompatible NCCL targets and Linux-only repository assumptions with native Windows SDK imports.
 - [x] Enable XLA's Windows `if_nccl` branch and add native NCCL linkage where Unix stubs were assumed.
 - [x] Audit newly exposed GIN/device code and use real existing fallback paths or explicit unsupported errors for unsupported features.
-- [ ] Apply the full patch chain with Git and Bazel's native patcher; build targeted XLA collective targets in CI before the full wheels.
+- [x] Apply the full patch chain with Git and Bazel's native patcher; build targeted XLA collective targets in CI before the full wheels.
 
 ### Task 3: Package and verify the NCCL runtime
 
@@ -94,12 +94,20 @@ NCCL iteration 1: implementation ready for the first native CI build.
 
 Run `43240511726` failed during native SDK setup. The ARM64 MSVC probe passed, but PowerShell returned both CMake installations; the script treated the resulting array as one executable path. No NCCL compilation or wheel build ran. Select one executable in PATH order for each native tool before retrying.
 
+### Iteration 2 — 96f7ec57
+
+Run `43241667596` passed the native NCCL SDK checks and CUDA/NCCL preflight. Native PJRT linking completed, then its wheel builder failed to import generated `jaxlib.tools.platform_tags`. The Bazel cache and failure diagnostics were saved successfully.
+
+The generated module is already declared in `build_utils.srcs`. A local Bazel reproduction using the actual builder and pinned rules_python passes both direct execution and invocation as an execution-configuration tool. Windows cached-file materialization remains a hypothesis: the next failure diagnostics capture the generated runfile's link type, target, existence, and matching manifest entry, alongside the working `build_utils.py` input. Do not replace the import or remove caching without confirming the cause.
+
+Run the actual PJRT wheel builder's `--help` through an execution-configuration smoke action before GPU preflight. Keep this small action out of the disk/remote cache so a previous successful invocation cannot conceal broken runfiles on a fresh runner; its dependencies retain normal caching. This check validates tool startup only, and the complete wheel builds and validation remain required.
+
 ### Branch split requested on November 12
 
 Continue NCCL development only on `aybchan/feat/windows-build-cuda-nccl`, preserving commits `15d92ad3` and `96f7ec57`. Restore `aybchan/feat/windows-build-cuda` to the pre-NCCL commit `44c101c77e5f9f5999c41efb0b25de983d818e15`. This supersedes the earlier hillclimb branch destination; the CUDA-only implementation plan remains historical.
 
 ### Iteration 3 — 24fec4e7
 
-The new-branch run `43244507192` built NCCL on native Windows ARM64, passed SDK import-library/export/provenance checks and the DLL loading/version query, and saved the verified SDK cache. CUDA/NCCL collective preflight compilation is still running.
+The new-branch run `43244507192` built NCCL on native Windows ARM64, passed SDK import-library/export/provenance checks and the DLL loading/version query, and saved the verified SDK cache. CUDA/NCCL collective preflight compilation passed at 17:36 UTC; the full wheel build is running.
 
 A production wheel-input audit found that the JAX root module had not imported the `cuda_nccl` repository used by `jax_plugin_sources.static_srcs`. A native Bazel fixture reproduces the missing apparent-repository mapping and verifies that importing the existing NCCL extension exposes both runtime files. The next iteration imports that shared extension in JAX and includes `jax_plugin_sources` in the existing preflight, so packaging-input resolution is checked before the full wheel build.

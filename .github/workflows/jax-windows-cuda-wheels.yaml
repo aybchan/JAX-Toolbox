@@ -10,6 +10,7 @@ on:
       - '.github/workflows/scripts/build-windows-jni.ps1'
       - '.github/workflows/scripts/install-windows-cuda.py'
       - '.github/workflows/scripts/build-windows-nccl.ps1'
+      - '.github/workflows/scripts/collect-windows-python-runfiles.ps1'
       - '.github/workflows/scripts/verify-windows-nccl.py'
       - '.github/workflows/scripts/trim-bazel-disk-cache.py'
       - '.github/patches/*cuda*'
@@ -22,6 +23,7 @@ on:
       - '.github/workflows/scripts/build-windows-jni.ps1'
       - '.github/workflows/scripts/install-windows-cuda.py'
       - '.github/workflows/scripts/build-windows-nccl.ps1'
+      - '.github/workflows/scripts/collect-windows-python-runfiles.ps1'
       - '.github/workflows/scripts/verify-windows-nccl.py'
       - '.github/workflows/scripts/trim-bazel-disk-cache.py'
       - '.github/patches/*cuda*'
@@ -324,6 +326,19 @@ jobs:
           $buildArgs | ConvertTo-Json | Set-Content C:/b/build-args.json
           python build/build.py @buildArgs --configure_only
 
+      - name: Check Python wheel-builder runfiles
+        working-directory: jax
+        # Exercise the real execution-configuration tool before GPU compilation.
+        run: |
+          & .\bazel-8.7.0-windows-arm64.exe `
+            --output_user_root=C:/b --batch `
+            --server_javabase=C:/b/jdk `
+            --host_jvm_args=-Djava.library.path=C:/b/jni `
+            --host_jvm_args=-XX:ErrorFile=C:/b/diagnostics/hs_err_pid%p.log `
+            --host_jvm_args=-Xlog:library=debug `
+            build --config=cuda_libraries_from_stubs --disk_cache=C:/b/disk-cache `
+            '//jaxlib/tools:build_gpu_plugin_wheel_tool_smoke'
+
       - name: Compile CUDA kernels and NCCL collectives on ARM64
         working-directory: jax
         # Exercise device kernels, extension linking, and wheel-source inputs
@@ -387,6 +402,8 @@ jobs:
         run: |
           $diagnostics = 'C:/b/diagnostics'
           New-Item -ItemType Directory -Force $diagnostics | Out-Null
+          & ./toolbox/.github/workflows/scripts/collect-windows-python-runfiles.ps1 `
+            -BuildRoot C:/b -OutputPath "$diagnostics/python-runfiles.json"
           $events = Get-WinEvent -FilterHashtable @{
             LogName = 'Application'
             StartTime = (Get-Date).AddHours(-6)

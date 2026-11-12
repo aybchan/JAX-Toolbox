@@ -523,3 +523,22 @@ diff --git a/jaxlib/tools/BUILD.bazel b/jaxlib/tools/BUILD.bazel
          "//jax_plugins/cuda:plugin_pyproject.toml",
          "//jax_plugins/cuda:plugin_setup.py",
      ]) + if_rocm([
+@@ -358,6 +361,18 @@
+         "@pypi//wheel",
+         "@rules_python//python/runfiles",
+     ],
++)
++
++# Exercise the wheel builder and its runfiles before compiling GPU targets.
++genrule(
++    name = "build_gpu_plugin_wheel_tool_smoke",
++    outs = ["build_gpu_plugin_wheel_tool_help.txt"],
++    cmd = "\"$(location :build_gpu_plugin_wheel_tool)\" --help > \"$@\"",
++    tags = [
++        "manual",
++        "no-cache",
++    ],
++    tools = [":build_gpu_plugin_wheel_tool"],
+ )
+ 
+ wheel_sources(
