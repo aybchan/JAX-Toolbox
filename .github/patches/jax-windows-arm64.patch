@@ -50,3 +50,14 @@
      --hash=sha256:011413b7426b75012840e35649e00fe0a2c3bae89fed433876e3a99251572efc \
      --hash=sha256:0ac49ea97594532dd44b7136094d35f5440fa06e6d9c6384a74c01764df388c5 \
      --hash=sha256:0e82073ecc7acc6436fac4b31674109c7e1d3e596789767eda01258a8c9e8123 \
+--- a/jaxlib/mosaic/gpu/serde.cc
++++ b/jaxlib/mosaic/gpu/serde.cc
+@@ -355,7 +355,7 @@
+     b.setInsertionPointAfter(op);
+     mlir::NVVM::MBarrierInitOp::create(
+         b, op->getLoc(), op->getOperand(0), op->getOperand(1),
+-        /*layout=*/0, op->getNumOperands() < 3 ? Value{} : op->getOperand(2));
++        op->getNumOperands() < 3 ? Value{} : op->getOperand(2));
+     op->erase();
+     erased = true;
+   }

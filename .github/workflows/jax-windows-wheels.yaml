@@ -165,6 +165,7 @@ jobs:
             --bazel_startup_options=--host_jvm_args=-Djava.library.path=C:/b/jni `
             --bazel_options=--config=ci_windows_arm64 `
             --bazel_options=--jobs=4 `
+            --bazel_options=--keep_going `
             '--bazel_options=--local_resources=memory=HOST_RAM*0.5' `
             --output_path=dist `
             --verbose
