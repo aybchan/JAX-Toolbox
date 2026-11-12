@@ -1,0 +1,16 @@
+diff --git a/absl/base/internal/per_thread_tls.h b/absl/base/internal/per_thread_tls.h
+--- a/absl/base/internal/per_thread_tls.h
++++ b/absl/base/internal/per_thread_tls.h
+@@ -41,6 +41,12 @@
+ #elif defined(ABSL_HAVE_TLS)
+ #define ABSL_PER_THREAD_TLS_KEYWORD __thread
+ #define ABSL_PER_THREAD_TLS 1
++#elif defined(_MSC_VER) && defined(__clang__) && defined(__CUDA_ARCH__)
++// Clang accepts host thread_local declarations in its CUDA device pass, but
++// rejects __declspec(thread) against the device target's lack of TLS support.
++// Keep the Windows host declaration unchanged in the host compilation pass.
++#define ABSL_PER_THREAD_TLS_KEYWORD thread_local
++#define ABSL_PER_THREAD_TLS 1
+ #elif defined(_MSC_VER)
+ #define ABSL_PER_THREAD_TLS_KEYWORD __declspec(thread)
+ #define ABSL_PER_THREAD_TLS 1

@@ -9,6 +9,7 @@ on:
       - '.github/patches/jax-windows-arm64.patch'
       - '.github/workflows/scripts/build-windows-jni.ps1'
       - '.github/workflows/scripts/install-windows-cuda.py'
+      - '.github/workflows/scripts/trim-bazel-disk-cache.py'
       - '.github/patches/*cuda*'
   workflow_dispatch:
   pull_request:
@@ -17,6 +18,7 @@ on:
       - '.github/patches/jax-windows-arm64.patch'
       - '.github/workflows/scripts/build-windows-jni.ps1'
       - '.github/workflows/scripts/install-windows-cuda.py'
+      - '.github/workflows/scripts/trim-bazel-disk-cache.py'
       - '.github/patches/*cuda*'
 
 permissions:
@@ -80,6 +82,7 @@ jobs:
           Copy-Item ../toolbox/.github/patches/rules-ml-toolchain-windows-cuda.patch third_party/rules_ml_toolchain/windows_cuda.patch
           New-Item -ItemType Directory -Force third_party/rules_cc | Out-Null
           Copy-Item ../toolbox/.github/patches/rules-cc-windows-cuda.patch third_party/rules_cc/windows_cuda.patch
+          Copy-Item ../toolbox/.github/patches/abseil-windows-cuda.patch third_party/absl/windows_cuda.patch
           Copy-Item ../toolbox/.github/patches/xla-windows-arm64-cuda.patch third_party/xla/windows_arm64_cuda.patch
 
       - name: Limit Bazel configuration to the Windows ARM build
@@ -175,6 +178,27 @@ jobs:
             -SourceRoot ./bazel-source `
             -OutputDirectory C:/b/jni
 
+      - name: Identify the native build cache
+        id: bazel-cache-identity
+        continue-on-error: true
+        run: |
+          if (-not $env:ImageVersion) { throw 'Runner ImageVersion is required for the native cache' }
+          $clangHash = (Get-FileHash $env:JAX_CLANG_PATH -Algorithm SHA256).Hash.Substring(0, 16)
+          $cudaHash = (Get-FileHash ./toolbox/.github/patches/windows-cuda-redistributions.json -Algorithm SHA256).Hash.Substring(0, 16)
+          $pythonVersion = python -c "import platform; print(platform.python_version())"
+          "prefix=windows-arm64-cuda-bazel8.7-v1-$env:ImageVersion-$clangHash-$cudaHash-py$pythonVersion" >> $env:GITHUB_OUTPUT
+
+      - name: Restore successful Bazel actions
+        id: bazel-cache-restore
+        if: steps.bazel-cache-identity.outcome == 'success'
+        uses: actions/cache/restore@v5
+        continue-on-error: true
+        with:
+          path: C:/b/disk-cache
+          key: ${{ steps.bazel-cache-identity.outputs.prefix }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ${{ steps.bazel-cache-identity.outputs.prefix }}-
+
       - name: Build the pure Python JAX wheel
         working-directory: jax
         env:
@@ -210,6 +234,7 @@ jobs:
             '--bazel_options=--define=no_cuda_support=false'
             '--bazel_options=--repo_env=LOCAL_CUDA_PATH=C:/cuda'
             '--bazel_options=--repo_env=LOCAL_CUDNN_PATH=C:/cudnn'
+            '--bazel_options=--disk_cache=C:/b/disk-cache'
             '--bazel_options=--jobs=4'
             '--bazel_options=--local_resources=memory=HOST_RAM*0.5'
             '--output_path=dist'
@@ -229,7 +254,7 @@ jobs:
             --host_jvm_args=-Djava.library.path=C:/b/jni `
             --host_jvm_args=-XX:ErrorFile=C:/b/diagnostics/hs_err_pid%p.log `
             --host_jvm_args=-Xlog:library=debug `
-            build --config=cuda_libraries_from_stubs `
+            build --config=cuda_libraries_from_stubs --disk_cache=C:/b/disk-cache `
             '@xla//xla/stream_executor/cuda:cub_sort_kernel_cuda_type_bf16'
 
       - name: Build native jaxlib and CUDA wheels
@@ -237,6 +262,21 @@ jobs:
         run: |
           $buildArgs = @(Get-Content C:/b/build-args.json -Raw | ConvertFrom-Json)
           python build/build.py @buildArgs
+
+      - name: Limit the Bazel cache to 4 GiB
+        id: trim-bazel-cache
+        if: ${{ !cancelled() && steps.bazel-cache-restore.outcome == 'success' }}
+        continue-on-error: true
+        # Batch mode exits before Bazel's idle-time cache GC can run.
+        run: python ./toolbox/.github/workflows/scripts/trim-bazel-disk-cache.py C:/b/disk-cache --max-bytes 4294967296
+
+      - name: Save successful Bazel actions after the build
+        if: ${{ !cancelled() && steps.trim-bazel-cache.outcome == 'success' }}
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: C:/b/disk-cache
+          key: ${{ steps.bazel-cache-restore.outputs.cache-primary-key }}
 
       - name: Collect native build failure diagnostics
         if: failure()
@@ -371,11 +411,13 @@ jobs:
             "XLA CUDA patch SHA256: $((Get-FileHash ../toolbox/.github/patches/xla-windows-arm64-cuda.patch -Algorithm SHA256).Hash)"
             "CUDA toolchain patch SHA256: $((Get-FileHash ../toolbox/.github/patches/rules-ml-toolchain-windows-cuda.patch -Algorithm SHA256).Hash)"
             "Windows compiler patch SHA256: $((Get-FileHash ../toolbox/.github/patches/rules-cc-windows-cuda.patch -Algorithm SHA256).Hash)"
+            "Abseil CUDA patch SHA256: $((Get-FileHash ../toolbox/.github/patches/abseil-windows-cuda.patch -Algorithm SHA256).Hash)"
           ) | Set-Content dist/source.txt
           Copy-Item $patch dist/
           Copy-Item ../toolbox/.github/patches/jax-windows-arm64-cuda.patch dist/
           Copy-Item ../toolbox/.github/patches/rules-ml-toolchain-windows-cuda.patch dist/
           Copy-Item ../toolbox/.github/patches/rules-cc-windows-cuda.patch dist/
+          Copy-Item ../toolbox/.github/patches/abseil-windows-cuda.patch dist/
           Copy-Item ../toolbox/.github/patches/windows-cuda-redistributions.json dist/
           Copy-Item ../toolbox/.github/patches/xla-windows-arm64-cuda.patch dist/
           Get-Content dist/source.txt >> $env:GITHUB_STEP_SUMMARY

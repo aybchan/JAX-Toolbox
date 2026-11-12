@@ -30,6 +30,14 @@
      ],
      integrity = "sha256-MsuAh9iDGKAfmXTq1iVOHKBtJj+hhH9hUDN5UlvUaJc=",
      strip_prefix = "xla-91888df6ce85102c30220e41d952065925e10886",
+@@ -137,6 +146,7 @@
+     patches = [
+         "//third_party/absl:btree.patch",
+         "//third_party/absl:raw_hash_set.patch",
++        "//third_party/absl:windows_cuda.patch",
+     ],
+     version = "20260526.0",
+ )
 --- /dev/null
 +++ b/third_party/rules_ml_toolchain/BUILD.bazel
 @@ -0,0 +1 @@
