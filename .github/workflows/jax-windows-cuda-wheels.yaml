@@ -261,7 +261,8 @@ jobs:
             '//jaxlib/cuda:cuda_householder_kernels' `
             '//jaxlib/cuda:cuda_linalg_kernels_impl' `
             '//jaxlib/cuda:_prng' `
-            '//jaxlib/cuda:_sparse'
+            '//jaxlib/cuda:_sparse' `
+            '//jaxlib/mosaic/gpu:libmosaic_gpu_runtime.so'
 
       - name: Build native jaxlib and CUDA wheels
         working-directory: jax

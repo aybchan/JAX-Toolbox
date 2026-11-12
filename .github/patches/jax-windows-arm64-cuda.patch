@@ -97,16 +97,21 @@
          "-Wl,--export-dynamic-symbol='mosaic_gpu_*'",
          "-Wl,--export-dynamic-symbol='nvshmem_my_pe'",
          "-Wl,--export-dynamic-symbol='nvshmem_n_pes'",
-@@ -263,7 +266,7 @@
+@@ -263,8 +266,11 @@
          "-Wl,--export-dynamic-symbol='nvshmemx_cumodule_init'",
          "-Wl,--export-dynamic-symbol='nvshmemx_init_status'",
          "-Wl,--export-dynamic-symbol='nvshmemx_mc_ptr'",
 -    ],
+-    deps = ["@local_config_cuda//cuda:cuda_headers"],
 +    ]),
-     deps = ["@local_config_cuda//cuda:cuda_headers"],
++    deps = [
++        "@local_config_cuda//cuda:cuda_headers",
++        "@xla//xla/tsl/cuda:cuda",
++    ],
      alwayslink = True,
  )
-@@ -448,6 +451,10 @@
+ 
+@@ -448,6 +454,10 @@
      name = "libmosaic_gpu_runtime.so",
      srcs = ["runtime.cc"],
      copts = ["-fvisibility=default"],
@@ -117,6 +122,14 @@
      linkshared = 1,
      tags = [
          "manual",
+@@ -455,6 +465,7 @@
+     ],
+     deps = [
+         "@local_config_cuda//cuda:cuda_headers",
++        "@xla//xla/tsl/cuda:cuda",
+         "@xla//xla/tsl/cuda:cudart",
+     ],
+ )
 --- a/jaxlib/mosaic/gpu/custom_call.cc
 +++ b/jaxlib/mosaic/gpu/custom_call.cc
 @@ -12,11 +12,6 @@
