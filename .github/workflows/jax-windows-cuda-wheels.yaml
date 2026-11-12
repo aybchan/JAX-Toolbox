@@ -78,6 +78,8 @@ jobs:
           git apply ../toolbox/.github/patches/jax-windows-arm64-cuda.patch
           New-Item -ItemType Directory -Force third_party/rules_ml_toolchain | Out-Null
           Copy-Item ../toolbox/.github/patches/rules-ml-toolchain-windows-cuda.patch third_party/rules_ml_toolchain/windows_cuda.patch
+          New-Item -ItemType Directory -Force third_party/rules_cc | Out-Null
+          Copy-Item ../toolbox/.github/patches/rules-cc-windows-cuda.patch third_party/rules_cc/windows_cuda.patch
           Copy-Item ../toolbox/.github/patches/xla-windows-arm64-cuda.patch third_party/xla/windows_arm64_cuda.patch
 
       - name: Limit Bazel configuration to the Windows ARM build
@@ -356,10 +358,12 @@ jobs:
             "CUDA integration patch SHA256: $((Get-FileHash ../toolbox/.github/patches/jax-windows-arm64-cuda.patch -Algorithm SHA256).Hash)"
             "XLA CUDA patch SHA256: $((Get-FileHash ../toolbox/.github/patches/xla-windows-arm64-cuda.patch -Algorithm SHA256).Hash)"
             "CUDA toolchain patch SHA256: $((Get-FileHash ../toolbox/.github/patches/rules-ml-toolchain-windows-cuda.patch -Algorithm SHA256).Hash)"
+            "Windows compiler patch SHA256: $((Get-FileHash ../toolbox/.github/patches/rules-cc-windows-cuda.patch -Algorithm SHA256).Hash)"
           ) | Set-Content dist/source.txt
           Copy-Item $patch dist/
           Copy-Item ../toolbox/.github/patches/jax-windows-arm64-cuda.patch dist/
           Copy-Item ../toolbox/.github/patches/rules-ml-toolchain-windows-cuda.patch dist/
+          Copy-Item ../toolbox/.github/patches/rules-cc-windows-cuda.patch dist/
           Copy-Item ../toolbox/.github/patches/windows-cuda-redistributions.json dist/
           Copy-Item ../toolbox/.github/patches/xla-windows-arm64-cuda.patch dist/
           Get-Content dist/source.txt >> $env:GITHUB_STEP_SUMMARY

@@ -1,0 +1,65 @@
+diff --git a/cc/private/toolchain/windows_cc_toolchain_config.bzl b/cc/private/toolchain/windows_cc_toolchain_config.bzl
+--- a/cc/private/toolchain/windows_cc_toolchain_config.bzl
++++ b/cc/private/toolchain/windows_cc_toolchain_config.bzl
+@@ -1158,24 +1158,14 @@
+                         ),
+                     ],
+                 ),
+-                flag_set(
+-                    actions = [
+-                        ACTION_NAMES.preprocess_assemble,
+-                        ACTION_NAMES.c_compile,
+-                        ACTION_NAMES.linkstamp_compile,
+-                        ACTION_NAMES.cpp_compile,
+-                        ACTION_NAMES.cpp_header_parsing,
+-                        ACTION_NAMES.cpp_module_compile,
+-                        ACTION_NAMES.cpp_module_codegen,
+-                        ACTION_NAMES.cpp_module_deps_scanning,
+-                        ACTION_NAMES.cpp20_module_compile,
+-                        ACTION_NAMES.cpp20_module_codegen,
+-                    ],
++            ] + [
++                flag_set(
++                    actions = actions,
+                     flag_groups = [
+                         flag_group(
+                             flag_groups = [
+                                 flag_group(
+-                                    flags = ["/Fo%{output_file}"],
++                                    flags = object_output_flags,
+                                     expand_if_not_available = "output_preprocess_file",
+                                 ),
+                             ],
+@@ -1201,7 +1191,31 @@
+                             expand_if_available = "output_file",
+                         ),
+                     ],
+-                ),
++                )
++                for actions, object_output_flags in [
++                    (
++                        [ACTION_NAMES.preprocess_assemble],
++                        ["/Fo%{output_file}"],
++                    ),
++                    (
++                        [
++                            ACTION_NAMES.c_compile,
++                            ACTION_NAMES.linkstamp_compile,
++                            ACTION_NAMES.cpp_compile,
++                            ACTION_NAMES.cpp_header_parsing,
++                            ACTION_NAMES.cpp_module_compile,
++                            ACTION_NAMES.cpp_module_codegen,
++                            ACTION_NAMES.cpp_module_deps_scanning,
++                            ACTION_NAMES.cpp20_module_compile,
++                            ACTION_NAMES.cpp20_module_codegen,
++                        ],
++                        # /Fo also names every CUDA device object, causing the
++                        # GPU architectures to overwrite one another. Clang's
++                        # -o names only the final host object. Forward both
++                        # arguments so Bazel response-file newlines are safe.
++                        ["/clang:-o", "/clang:%{output_file}"] if ctx.attr.compiler == "clang-cl" else ["/Fo%{output_file}"],
++                    ),
++                ]
+             ],
+         )
+ 

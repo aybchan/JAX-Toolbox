@@ -1,6 +1,19 @@
 --- a/MODULE.bazel
 +++ b/MODULE.bazel
-@@ -22,6 +22,8 @@
+@@ -15,6 +15,12 @@
+ bazel_dep(name = "protobuf", version = "32.1", repo_name = "com_google_protobuf")
+ bazel_dep(name = "pybind11_bazel", version = "3.0.0")
+ bazel_dep(name = "rules_cc", version = "0.2.20")
++single_version_override(
++    module_name = "rules_cc",
++    version = "0.2.20",
++    patch_strip = 1,
++    patches = ["//third_party/rules_cc:windows_cuda.patch"],
++)
+ bazel_dep(name = "rules_python", version = "2.2.0")
+ bazel_dep(name = "zlib", version = "1.3.2")
+ 
+@@ -22,6 +28,8 @@
  bazel_dep(name = "rules_ml_toolchain")
  archive_override(
      module_name = "rules_ml_toolchain",
@@ -9,7 +22,7 @@
      integrity = "sha256-AD+fcA+AoQ9wvsdh0AUpI30WpuIMBjEkyf/6mKjArzU=",
      strip_prefix = "rules_ml_toolchain-c0eb2743b7b12b2bbcf0e1888e26d36ba6b093de",
      urls = ["https://github.com/google-ml-infra/rules_ml_toolchain/archive/c0eb2743b7b12b2bbcf0e1888e26d36ba6b093de.tar.gz"],
-@@ -39,6 +41,7 @@
+@@ -39,6 +47,7 @@
          "//third_party/xla:llvm_windows_arm64_native_triple.patch",
          "//third_party/xla:onednn_async_aarch64.patch",
          "//third_party/xla:onednn_gemm_bfloat16.patch",
@@ -285,3 +298,7 @@
    _load("cuda_runtime", ["libcudart.so.12"])
    _load("cu13", ["libcudart.so.13"])
    # cuda_nvrtc isn't directly a dependency of JAX, but CUDNN appears to need it
+--- /dev/null
++++ b/third_party/rules_cc/BUILD.bazel
+@@ -0,0 +1 @@
++exports_files(["windows_cuda.patch"])
