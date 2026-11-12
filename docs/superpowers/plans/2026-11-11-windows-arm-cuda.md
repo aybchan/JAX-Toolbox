@@ -53,3 +53,5 @@
 - Follow-up source audit: CUDA diagnostics checked PLATFORM_WINDOWS before the header defining it. A preprocessing fixture using the pinned Abseil and XLA headers reproduces POSIX header selection with _WIN32 enabled; including tsl/platform/platform.h before the guards fixes it. Added the explicit Bazel dependency; combined XLA patch passes Git and native Bazel patch parsing.
 
 - Iteration 3 completed with a concrete compile failure after 12,778 actions: clang-cl rejects separate -x and cuda response-file lines. Reproduced both CI diagnostics locally; Windows now emits the joined -xcuda argument, which produces an ARM64 COFF object. Linux flags are unchanged. Twelve focused compiler tests and native Bazel patch application pass. Preserve failed compiler response files in CI diagnostics.
+
+- Shorten compiler iterations: configure once, build the exact bf16 CUDA sort-kernel target first, then reuse its outputs for the complete wheel build. Iteration 5 diagnostics confirmed the patched JNI DLL loaded; analysis reached 29,960 configured targets without reproducing the native crash before supersession.

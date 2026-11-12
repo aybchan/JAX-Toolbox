@@ -172,33 +172,57 @@ jobs:
         # exist for Windows ARM64. JAX's setuptools backend only needs sources.
         run: python -m pip wheel --no-deps --wheel-dir dist .
 
+      - name: Configure native jaxlib and CUDA wheels
+        working-directory: jax
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          New-Item -ItemType Directory -Force C:/b/diagnostics | Out-Null
+          $buildArgs = @(
+            'build'
+            '--wheels=jax-cuda-pjrt,jax-cuda-plugin,jaxlib'
+            '--cuda_major_version=13'
+            '--cuda_version=13.4.3'
+            '--cudnn_version=9.28.1'
+            '--build_cuda_with_clang'
+            '--disable_nccl'
+            "--python_version=$env:PYTHON_VERSION"
+            '--bazel_path=.\bazel-8.7.0-windows-arm64.exe'
+            "--clang_path=$env:JAX_CLANG_PATH"
+            '--bazel_startup_options=--output_user_root=C:/b'
+            '--bazel_startup_options=--batch'
+            '--bazel_startup_options=--host_jvm_args=-Djava.library.path=C:/b/jni'
+            '--bazel_startup_options=--host_jvm_args=-XX:ErrorFile=C:/b/diagnostics/hs_err_pid%p.log'
+            '--bazel_startup_options=--host_jvm_args=-Xlog:library=debug'
+            '--bazel_options=--config=ci_windows_arm64'
+            '--bazel_options=--define=no_cuda_support=false'
+            '--bazel_options=--repo_env=LOCAL_CUDA_PATH=C:/cuda'
+            '--bazel_options=--repo_env=LOCAL_CUDNN_PATH=C:/cudnn'
+            '--bazel_options=--jobs=4'
+            '--bazel_options=--local_resources=memory=HOST_RAM*0.5'
+            '--output_path=dist'
+            '--verbose'
+          )
+          $buildArgs | ConvertTo-Json | Set-Content C:/b/build-args.json
+          python build/build.py @buildArgs --configure_only
+
+      - name: Compile a CUDA kernel on ARM64
+        working-directory: jax
+        # Exercise CUDA parsing, headers, device compilation, and ARM64 host
+        # object generation before compiling the full PJRT dependency graph.
+        run: |
+          & .\bazel-8.7.0-windows-arm64.exe `
+            --output_user_root=C:/b --batch `
+            --host_jvm_args=-Djava.library.path=C:/b/jni `
+            --host_jvm_args=-XX:ErrorFile=C:/b/diagnostics/hs_err_pid%p.log `
+            --host_jvm_args=-Xlog:library=debug `
+            build --config=cuda_libraries_from_stubs `
+            '@xla//xla/stream_executor/cuda:cub_sort_kernel_cuda_type_bf16'
+
       - name: Build native jaxlib and CUDA wheels
         working-directory: jax
         run: |
-          New-Item -ItemType Directory -Force C:/b/diagnostics | Out-Null
-          python build/build.py build `
-            --wheels=jax-cuda-pjrt,jax-cuda-plugin,jaxlib `
-            --cuda_major_version=13 `
-            --cuda_version=13.4.3 `
-            --cudnn_version=9.28.1 `
-            --build_cuda_with_clang `
-            --disable_nccl `
-            --python_version=$env:PYTHON_VERSION `
-            --bazel_path=.\bazel-8.7.0-windows-arm64.exe `
-            --clang_path="$env:JAX_CLANG_PATH" `
-            --bazel_startup_options=--output_user_root=C:/b `
-            --bazel_startup_options=--batch `
-            --bazel_startup_options=--host_jvm_args=-Djava.library.path=C:/b/jni `
-            --bazel_startup_options=--host_jvm_args=-XX:ErrorFile=C:/b/diagnostics/hs_err_pid%p.log `
-            --bazel_startup_options=--host_jvm_args=-Xlog:library=debug `
-            --bazel_options=--config=ci_windows_arm64 `
-            --bazel_options=--define=no_cuda_support=false `
-            --bazel_options=--repo_env=LOCAL_CUDA_PATH=C:/cuda `
-            --bazel_options=--repo_env=LOCAL_CUDNN_PATH=C:/cudnn `
-            --bazel_options=--jobs=4 `
-            '--bazel_options=--local_resources=memory=HOST_RAM*0.5' `
-            --output_path=dist `
-            --verbose
+          $buildArgs = @(Get-Content C:/b/build-args.json -Raw | ConvertFrom-Json)
+          python build/build.py @buildArgs
 
       - name: Collect native build failure diagnostics
         if: failure()
