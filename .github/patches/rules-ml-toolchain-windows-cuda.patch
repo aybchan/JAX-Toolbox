@@ -249,7 +249,16 @@ diff --git a/gpu/cuda/BUILD.tpl b/gpu/cuda/BUILD.tpl
 diff --git a/gpu/cuda/build_defs.bzl.tpl b/gpu/cuda/build_defs.bzl.tpl
 --- a/gpu/cuda/build_defs.bzl.tpl
 +++ b/gpu/cuda/build_defs.bzl.tpl
-@@ -135,7 +135,7 @@
+@@ -127,15 +127,14 @@
+ 
+ def cuda_default_copts():
+     """Default options for all CUDA compilations."""
+-    return if_cuda([
+-        "-x", "cuda",
++    return if_cuda(%{cuda_language_copts} + [
+         "-DGOOGLE_CUDA=1",
+     ] + %{cuda_extra_copts}) + if_cuda_clang_opt(
+         # Some important CUDA optimizations are only enabled at O3.
          ["-O3"]
      ) + cuda_compiler(
          # -Xcuda-ptxas --maxrregcount=0 - turn off the global maxrregcount limit to ensure a successful CUDA build. Default value: 255
@@ -258,7 +267,7 @@ diff --git a/gpu/cuda/build_defs.bzl.tpl b/gpu/cuda/build_defs.bzl.tpl
          if_nvcc = [
              "-Xcuda-fatbinary=--compress-all",
              # Ensure that NVCC matches clang's constexpr behavior.
-@@ -226,9 +226,7 @@
+@@ -226,9 +225,7 @@
          deps = deps + if_cuda_is_configured([
              "@local_config_cuda//cuda:implicit_cuda_headers_dependency",
          ]),
@@ -306,10 +315,17 @@ diff --git a/gpu/cuda/cuda_configure.bzl b/gpu/cuda/cuda_configure.bzl
      cmd = "echo __clang_major__ | \"%s\" -E -P -" % cc
      result = execute(
          repository_ctx,
-@@ -337,6 +357,32 @@
+@@ -337,6 +357,39 @@
      )
  
      return copts
++
++def _cuda_language_copts(repository_ctx):
++    if repository_ctx.os.name.lower().startswith("windows"):
++        # clang-cl preserves response-file line endings. Bazel writes each
++        # option on its own line, so a separate -x cannot consume the next line.
++        return ["-xcuda"]
++    return ["-x", "cuda"]
 +
 +def _windows_cuda_copts(repository_ctx):
 +    if not repository_ctx.os.name.lower().startswith("windows"):
@@ -339,16 +355,17 @@ diff --git a/gpu/cuda/cuda_configure.bzl b/gpu/cuda/cuda_configure.bzl
  
  def _get_cuda_config(repository_ctx):
      """Detects and returns information about the CUDA installation on the system.
-@@ -556,6 +602,8 @@
+@@ -556,6 +609,9 @@
          {
              "%{cuda_is_configured}": "False",
              "%{cuda_extra_copts}": "[]",
++            "%{cuda_language_copts}": str(_cuda_language_copts(repository_ctx)),
 +            "%{cuda_clang_copts}": str(_cuda_clang_copts(repository_ctx)),
 +            "%{cuda_static_linkopts}": "[]" if cpu_value == "Windows" else '["-lrt"]',
              "%{cuda_gpu_architectures}": "[]",
              "%{cuda_version}": "0.0",
              "%{use_hermetic_cc_toolchain}": "False",
-@@ -638,10 +686,13 @@
+@@ -638,10 +694,14 @@
          repository_ctx.attr.build_defs_tpl,
          {
              "%{cuda_is_configured}": "True",
@@ -359,11 +376,12 @@ diff --git a/gpu/cuda/cuda_configure.bzl b/gpu/cuda/cuda_configure.bzl
 +                _create_cuda_copts_list(cuda_config.compute_capabilities) +
 +                _windows_cuda_copts(repository_ctx),
              ),
++            "%{cuda_language_copts}": str(_cuda_language_copts(repository_ctx)),
 +            "%{cuda_static_linkopts}": "[]" if cuda_config.cpu_value == "Windows" else '["-lrt"]',
              "%{cuda_gpu_architectures}": str(cuda_config.compute_capabilities),
              "%{cuda_version}": cuda_config.cuda_version,
              "%{use_hermetic_cc_toolchain}": str(_use_hermetic_toolchains(repository_ctx)),
-@@ -702,6 +753,10 @@
+@@ -702,6 +762,10 @@
          _create_dummy_cuda_repository(repository_ctx)
  
  def _create_toolchains_repository(repository_ctx):

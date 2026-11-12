@@ -221,6 +221,17 @@ jobs:
               if (Test-Path $source) {
                 $name = "$($outputBase.Name)-$($relative.Replace('/', '-'))"
                 Copy-Item $source (Join-Path $diagnostics $name)
+                if ($relative -eq 'command.log') {
+                  $log = Get-Content $source -Raw
+                  foreach ($match in [regex]::Matches($log, '@(bazel-out/[^\s]+\.params)')) {
+                    $params = Join-Path $outputBase.FullName "execroot/_main/$($match.Groups[1].Value)"
+                    if (Test-Path $params) {
+                      $label = "failed-command-$($match.Index).params"
+                      Copy-Item $params (Join-Path $diagnostics $label)
+                      Get-Content $params
+                    }
+                  }
+                }
               }
             }
           }
