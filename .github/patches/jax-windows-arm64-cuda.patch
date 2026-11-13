@@ -587,3 +587,171 @@ diff --git a/jax/_src/hardware_utils.py b/jax/_src/hardware_utils.py
 +    return (driver.cuInit(0) == 0
 +            and driver.cuDeviceGetCount(ctypes.byref(count)) == 0
 +            and count.value > 0)
+diff --git a/jaxlib/mosaic/gpu/dump.cc b/jaxlib/mosaic/gpu/dump.cc
+--- a/jaxlib/mosaic/gpu/dump.cc
++++ b/jaxlib/mosaic/gpu/dump.cc
+@@ -33,7 +33,6 @@
+ #include <cstdint>
+ #include <cstdlib>
+ #include <cstring>
+-#include <fstream>
+ #include <iostream>
+ #include <optional>
+ #include <string>
+@@ -53,8 +52,11 @@
+ #include "absl/strings/str_cat.h"
+ #include "absl/strings/str_format.h"
+ #include "absl/strings/str_split.h"
++#include "llvm/ADT/SmallString.h"
+ #include "llvm/ADT/StringRef.h"
+ #include "llvm/Support/FileSystem.h"
++#include "llvm/Support/MemoryBuffer.h"
++#include "llvm/Support/Program.h"
+ #include "llvm/Support/raw_ostream.h"
+ #include "mlir/Dialect/GPU/IR/GPUDialect.h"
+ #include "mlir/IR/BuiltinAttributes.h"
+@@ -67,19 +69,26 @@
+ 
+ namespace {
+ 
+-#if !defined(_WIN32)
+ class TemporaryDirectory {
+  private:
+   TemporaryDirectory(std::string path) : path(std::move(path)) {}
+-  // TODO(apaszke): Unlink in destructor.
+ 
+  public:
+   static absl::StatusOr<TemporaryDirectory> Create() {
++#if defined(_WIN32)
++    llvm::SmallString<128> path;
++    if (std::error_code error =
++            llvm::sys::fs::createUniqueDirectory("mosaic-gpu", path)) {
++      return absl::InternalError(error.message());
++    }
++    return TemporaryDirectory(path.str().str());
++#else
+     std::string pattern = "/tmp/mosaic-gpu-XXXXXX";
+     if (mkdtemp(pattern.data()) == NULL) {
+       return absl::InternalError("Failed to create temporary directory");
+     }
+     return TemporaryDirectory(std::move(pattern));
++#endif
+   }
+ 
+   std::string_view GetPath() { return path; }
+@@ -95,6 +104,45 @@
+   const char* cuda_path_ptr = mosaic::gpu::GetCUDARoot();
+   if (!cuda_path_ptr)
+     return absl::InternalError("Failed to get the CUDA toolkit path");
++#if defined(_WIN32)
++  // Native installers and redistributable archives use different bin layouts.
++  std::string bin_arm64 = std::string(cuda_path_ptr) + "/bin/arm64";
++  std::string bin = std::string(cuda_path_ptr) + "/bin";
++  llvm::StringRef search_paths[] = {bin_arm64, bin};
++  auto tool_path = llvm::sys::findProgramByName(
++      std::string(tool) + ".exe", search_paths);
++  if (!tool_path) {
++    return absl::InternalError(absl::StrCat(
++        "Failed to find CUDA tool ", tool, ": ", tool_path.getError().message()));
++  }
++
++  llvm::SmallString<128> output_path;
++  if (std::error_code error = llvm::sys::fs::createTemporaryFile(
++          "mosaic-gpu-nvdisasm", "txt", output_path)) {
++    return absl::InternalError(error.message());
++  }
++  absl::Cleanup output_cleanup = [&] { llvm::sys::fs::remove(output_path); };
++  std::vector<llvm::StringRef> argv(args.begin(), args.end() - 1);
++  std::optional<llvm::StringRef> redirects[] = {
++      llvm::StringRef(""), output_path.str(),
++      stderr_to_stdout ? std::optional<llvm::StringRef>(output_path.str())
++                       : std::nullopt};
++  std::string error_message;
++  // LLVM quotes Windows arguments and captures both streams without a shell.
++  int status = llvm::sys::ExecuteAndWait(*tool_path, argv, std::nullopt,
++                                        redirects, 0, 0, &error_message);
++  auto output = llvm::MemoryBuffer::getFile(output_path);
++  if (status != 0) {
++    return absl::InternalError(absl::StrCat(
++        "CUDA tool failed (exit ", status, "): ", error_message,
++        output ? (*output)->getBuffer().str() : output.getError().message()));
++  }
++  if (!output) {
++    return absl::InternalError(absl::StrCat(
++        "Failed to read CUDA tool output: ", output.getError().message()));
++  }
++  return (*output)->getBuffer().str();
++#else
+   std::string tool_path(cuda_path_ptr);
+   tool_path += "/bin/";
+   tool_path += tool;
+@@ -167,6 +215,7 @@
+     return absl::InternalError(error_message);
+   }
+   return stdout;
++#endif
+ }
+ 
+ // Parse the SASS and reformat control codes following NervanaSystems/maxas.
+@@ -230,7 +279,6 @@
+   }
+   return result;
+ }
+-#endif
+ 
+ // The name of the attribute wrapping the module basename for dumping. See
+ // `GetDumpOptionsForModule` for more details.
+@@ -324,13 +372,6 @@
+ 
+ void DumpSass(mlir::gpu::BinaryOp binary, std::string_view path,
+               std::string_view basename, bool include_sass_ctrl) {
+-#if defined(_WIN32)
+-  static_cast<void>(binary);
+-  static_cast<void>(path);
+-  static_cast<void>(basename);
+-  static_cast<void>(include_sass_ctrl);
+-  LOG(ERROR) << "SASS dumping is not supported on Windows.";
+-#else
+   auto objects = binary.getObjects();
+   if (objects.size() != 1) {
+     std::cerr << "Multiple objects per gpu.binary unsupported" << std::endl;
+@@ -347,14 +388,25 @@
+     std::cerr << "Failed to create a temporary directory" << std::endl;
+     return;
+   }
++  absl::Cleanup tmpdir_cleanup = [&] {
++    llvm::sys::fs::remove_directories(std::string(tmpdir->GetPath()));
++  };
+   std::string elf_path = std::string(tmpdir->GetPath()) + "/kernel.bin";
+-  // Dump ELF into a file.
+-  std::ofstream elf_out(elf_path.c_str());
+-  if (!elf_out) {
++  // OF_None writes the ELF in binary mode, without newline translation.
++  std::error_code error;
++  llvm::raw_fd_ostream elf_out(elf_path, error, llvm::sys::fs::OF_None);
++  if (error) {
++    std::cerr << "Failed to open binary file: " << error.message() << std::endl;
++    return;
++  }
++  elf_out << elf;
++  // Close before nvdisasm opens the file, including on Windows.
++  elf_out.close();
++  if (elf_out.has_error()) {
+     std::cerr << "Failed to write binary to a file" << std::endl;
+-    return;
+-  }
+-  elf_out << elf << std::endl;
++    elf_out.clear_error();
++    return;
++  }
+   // Call nvdisasm to pretty-print SASS.
+   std::vector<const char*> nvdisasm_args = {"nvdisasm", "-ndf", "-c",
+                                             elf_path.c_str()};
+@@ -376,7 +428,6 @@
+     mosaic::gpu::DumpToFileOrStdout(*result, absl::StrCat(basename, ".sass"),
+                                     path);
+   }
+-#endif
+ }
+ 
+ }  // namespace gpu
