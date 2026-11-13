@@ -1,0 +1,814 @@
+diff --git a/xla/tsl/cuda/BUILD.bazel b/xla/tsl/cuda/BUILD.bazel
+--- a/xla/tsl/cuda/BUILD.bazel
++++ b/xla/tsl/cuda/BUILD.bazel
+@@ -69,7 +69,11 @@
+ 
+ alias(
+     name = "cublas",  # buildifier: disable=duplicated-name
+-    actual = if_cuda_libs("@cuda_cublas//:cublas", ":cublas_stub"),
++    actual = select({
++        "//xla/tsl:windows": "@cuda_cublas//:cublas",
++        "@local_config_cuda//cuda:cuda_tools_and_libs": "@cuda_cublas//:cublas",
++        "//conditions:default": ":cublas_stub",
++    }),
+     visibility = ["//visibility:public"],
+ )
+ 
+@@ -100,7 +104,11 @@
+ 
+ alias(
+     name = "cublas_lt",
+-    actual = if_cuda_libs("@cuda_cublas//:cublasLt", ":cublas_lt_stub"),
++    actual = select({
++        "//xla/tsl:windows": "@cuda_cublas//:cublasLt",
++        "@local_config_cuda//cuda:cuda_tools_and_libs": "@cuda_cublas//:cublasLt",
++        "//conditions:default": ":cublas_lt_stub",
++    }),
+     visibility = ["//visibility:public"],
+ )
+ 
+@@ -110,7 +118,7 @@
+ )
+ 
+ cc_library(
+-    name = "cuda",  # buildifier: disable=duplicated-name
++    name = "cuda_dynamic_stub",
+     srcs = if_cuda_is_configured([
+         "cuda_stub.cc",
+         "cuda.tramp.S",
+@@ -127,6 +135,15 @@
+         "@tsl//tsl/platform:dso_loader",
+         "@tsl//tsl/platform:load_library",
+     ]),
++)
++
++alias(
++    name = "cuda",
++    actual = select({
++        "//xla/tsl:windows": "@cuda_cudart//:cuda_driver",
++        "//conditions:default": ":cuda_dynamic_stub",
++    }),
++    visibility = ["//visibility:public"],
+ )
+ 
+ cuda_stub(
+@@ -170,7 +187,11 @@
+ 
+ alias(
+     name = "cudart",  # buildifier: disable=duplicated-name
+-    actual = if_cuda_libs("@cuda_cudart//:cudart", ":cudart_stub"),
++    actual = select({
++        "//xla/tsl:windows": "@cuda_cudart//:cudart",
++        "@local_config_cuda//cuda:cuda_tools_and_libs": "@cuda_cudart//:cudart",
++        "//conditions:default": ":cudart_stub",
++    }),
+     visibility = ["//visibility:public"],
+ )
+ 
+@@ -203,7 +224,11 @@
+ 
+ alias(
+     name = "cudnn",  # buildifier: disable=duplicated-name
+-    actual = if_cuda_libs("@cuda_cudnn//:cudnn", ":cudnn_stub"),
++    actual = select({
++        "//xla/tsl:windows": "@cuda_cudnn//:cudnn",
++        "@local_config_cuda//cuda:cuda_tools_and_libs": "@cuda_cudnn//:cudnn",
++        "//conditions:default": ":cudnn_stub",
++    }),
+     visibility = ["//visibility:public"],
+ )
+ 
+@@ -215,7 +240,11 @@
+ 
+ alias(
+     name = "nccl_rpath",
+-    actual = if_cuda_libs("@cuda_nccl//:nccl", ":nccl_rpath_flags"),
++    actual = select({
++        "//xla/tsl:windows": "@cuda_nccl//:nccl",
++        "@local_config_cuda//cuda:cuda_tools_and_libs": "@cuda_nccl//:nccl",
++        "//conditions:default": ":nccl_rpath_flags",
++    }),
+     visibility = ["//visibility:public"],
+ )
+ 
+@@ -257,7 +286,11 @@
+ 
+ alias(
+     name = "cufft",  # buildifier: disable=duplicated-name
+-    actual = if_cuda_libs("@cuda_cufft//:cufft", ":cufft_stub"),
++    actual = select({
++        "//xla/tsl:windows": "@cuda_cufft//:cufft",
++        "@local_config_cuda//cuda:cuda_tools_and_libs": "@cuda_cufft//:cufft",
++        "//conditions:default": ":cufft_stub",
++    }),
+     visibility = ["//visibility:public"],
+ )
+ 
+@@ -295,7 +328,11 @@
+ 
+ alias(
+     name = "cupti",  # buildifier: disable=duplicated-name
+-    actual = if_cuda_libs("@cuda_cupti//:cupti", ":cupti_stub"),
++    actual = select({
++        "//xla/tsl:windows": "@cuda_cupti//:cupti",
++        "@local_config_cuda//cuda:cuda_tools_and_libs": "@cuda_cupti//:cupti",
++        "//conditions:default": ":cupti_stub",
++    }),
+     visibility = ["//visibility:public"],
+ )
+ 
+@@ -331,7 +368,11 @@
+ 
+ alias(
+     name = "cusolver",  # buildifier: disable=duplicated-name
+-    actual = if_cuda_libs("@cuda_cusolver//:cusolver", ":cusolver_stub"),
++    actual = select({
++        "//xla/tsl:windows": "@cuda_cusolver//:cusolver",
++        "@local_config_cuda//cuda:cuda_tools_and_libs": "@cuda_cusolver//:cusolver",
++        "//conditions:default": ":cusolver_stub",
++    }),
+     visibility = ["//visibility:public"],
+ )
+ 
+@@ -368,7 +409,11 @@
+ 
+ alias(
+     name = "cusparse",  # buildifier: disable=duplicated-name
+-    actual = if_cuda_libs("@cuda_cusparse//:cusparse", ":cusparse_stub"),
++    actual = select({
++        "//xla/tsl:windows": "@cuda_cusparse//:cusparse",
++        "@local_config_cuda//cuda:cuda_tools_and_libs": "@cuda_cusparse//:cusparse",
++        "//conditions:default": ":cusparse_stub",
++    }),
+     visibility = ["//visibility:public"],
+ )
+ 
+@@ -403,7 +448,11 @@
+ 
+ alias(
+     name = "nccl",  # buildifier: disable=duplicated-name
+-    actual = if_cuda_libs("@cuda_nccl//:nccl", ":nccl_stub"),
++    actual = select({
++        "//xla/tsl:windows": "@cuda_nccl//:nccl",
++        "@local_config_cuda//cuda:cuda_tools_and_libs": "@cuda_nccl//:nccl",
++        "//conditions:default": ":nccl_stub",
++    }),
+     visibility = ["//visibility:public"],
+ )
+ 
+@@ -466,7 +515,10 @@
+ 
+ alias(
+     name = "nvml",  # buildifier: disable=duplicated-name
+-    actual = ":nvml_stub",
++    actual = select({
++        "//xla/tsl:windows": "@cuda_nvml//:nvml",
++        "//conditions:default": ":nvml_stub",
++    }),
+     visibility = ["//visibility:public"],
+ )
+ 
+@@ -497,6 +549,9 @@
+ 
+ alias(
+     name = "nvrtc",  # buildifier: disable=duplicated-name
+-    actual = ":nvrtc_stub",
+-    visibility = ["//visibility:public"],
+-)
++    actual = select({
++        "//xla/tsl:windows": "@cuda_nvrtc//:nvrtc",
++        "//conditions:default": ":nvrtc_stub",
++    }),
++    visibility = ["//visibility:public"],
++)
+diff --git a/xla/stream_executor/cuda/cudnn_api_wrappers.cc b/xla/stream_executor/cuda/cudnn_api_wrappers.cc
+--- a/xla/stream_executor/cuda/cudnn_api_wrappers.cc
++++ b/xla/stream_executor/cuda/cudnn_api_wrappers.cc
+@@ -14,8 +14,6 @@
+ ==============================================================================*/
+ 
+ #include "xla/stream_executor/cuda/cudnn_api_wrappers.h"
+-
+-#include <sys/resource.h>
+ 
+ #include <string>
+ 
+@@ -84,8 +82,12 @@
+ // cudnn_plugin. This is mainly relevant for unit tests that use the CUDA
+ // executor which depends on this wrapper but should not introduce a dependency
+ // on cudnn.
++// COFF weak references do not pull symbols from import libraries. Windows
++// uses the normal cuDNN header declaration and an explicit BUILD dependency.
++#if !defined(_WIN32)
+ extern "C" [[gnu::weak]] cudnnStatus_t cudnnGetProperty(
+     libraryPropertyType type, int* value);
++#endif
+ 
+ static libraryPropertyType ToLibraryPropertyType(CudnnProperty type) {
+   switch (type) {
+@@ -99,9 +101,11 @@
+ }
+ 
+ absl::StatusOr<int> GetCudnnProperty(CudnnProperty type) {
++#if !defined(_WIN32)
+   if (!cudnnGetProperty) {
+     return absl::NotFoundError("cuDNN is not linked into the application.");
+   }
++#endif
+   int value{};
+   ABSL_RETURN_IF_ERROR(
+       ToStatus(cudnnGetProperty(ToLibraryPropertyType(type), &value)));
+diff --git a/xla/pjrt/pjrt_api.cc b/xla/pjrt/pjrt_api.cc
+--- a/xla/pjrt/pjrt_api.cc
++++ b/xla/pjrt/pjrt_api.cc
+@@ -23,6 +23,7 @@
+ #include "absl/container/flat_hash_map.h"
+ #include "absl/log/log.h"
+ #include "absl/status/status.h"
++#include "absl/status/status_macros.h"
+ #include "absl/status/statusor.h"
+ #include "absl/strings/ascii.h"
+ #include "absl/strings/numbers.h"
+@@ -32,10 +33,14 @@
+ #include "xla/pjrt/c/pjrt_c_api_status_utils.h"
+ #include "xla/tsl/platform/errors.h"
+ 
+-#if !defined(PLATFORM_WINDOWS)
++#if defined(PLATFORM_WINDOWS)
++#ifndef NOMINMAX
++#define NOMINMAX
++#endif
++#include <windows.h>
++#undef ERROR
++#else
+ #include <dlfcn.h>
+-
+-#include "absl/status/status_macros.h"
+ #endif
+ 
+ namespace pjrt {
+@@ -101,8 +106,51 @@
+ absl::StatusOr<const PJRT_Api*> LoadPjrtPlugin(absl::string_view device_type,
+                                                absl::string_view library_path) {
+ #ifdef PLATFORM_WINDOWS
+-  return absl::UnimplementedError(
+-      "LoadPjrtPlugin is not implemented on windows yet.");
++  auto windows_error = [&](const char* operation, DWORD error) {
++    return absl::InternalError(absl::StrCat(
++        operation, " failed for ", library_path, " (Windows error ", error, ")"));
++  };
++  const std::string utf8_path(library_path);
++  int wide_size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
++                                    utf8_path.c_str(), -1, nullptr, 0);
++  if (wide_size == 0) {
++    return windows_error("MultiByteToWideChar", GetLastError());
++  }
++  std::wstring wide_path(wide_size, L'\0');
++  if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8_path.c_str(), -1,
++                          wide_path.data(), wide_size) == 0) {
++    return windows_error("MultiByteToWideChar", GetLastError());
++  }
++  DWORD full_size = GetFullPathNameW(wide_path.c_str(), 0, nullptr, nullptr);
++  if (full_size == 0) {
++    return windows_error("GetFullPathNameW", GetLastError());
++  }
++  std::wstring full_path(full_size, L'\0');
++  DWORD full_length = GetFullPathNameW(wide_path.c_str(), full_size,
++                                      full_path.data(), nullptr);
++  if (full_length == 0) {
++    return windows_error("GetFullPathNameW", GetLastError());
++  }
++  if (full_length >= full_size) {
++    return windows_error("GetFullPathNameW", ERROR_INSUFFICIENT_BUFFER);
++  }
++  // Match Python extension loading: search AddDllDirectory registrations and
++  // dependencies beside the plugin, without changing the process search policy.
++  HMODULE library = LoadLibraryExW(
++      full_path.c_str(), nullptr,
++      LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
++  if (library == nullptr) {
++    return windows_error("LoadLibraryExW", GetLastError());
++  }
++  FARPROC symbol = GetProcAddress(library, "GetPjrtApi");
++  if (symbol == nullptr) {
++    DWORD error = GetLastError();
++    FreeLibrary(library);
++    return absl::NotFoundError(
++        absl::StrCat("GetPjrtApi not found in ", library_path,
++                    " (Windows error ", error, ")"));
++  }
++  PjrtApiInitFn init_fn = reinterpret_cast<PjrtApiInitFn>(symbol);
+ #else
+   void* library = dlopen(library_path.data(), RTLD_LAZY);
+   if (library == nullptr) {
+@@ -116,12 +164,13 @@
+     return absl::NotFoundError(
+         absl::StrCat("GetPjrtApi not found in ", library_path));
+   }
++#endif
++  // Keep the library loaded for the lifetime of its registered PJRT API.
+   LOG(INFO) << "GetPjrtApi was found for " << device_type << " at "
+             << library_path;
+   const PJRT_Api* api = init_fn();
+   ABSL_RETURN_IF_ERROR(SetPjrtApi(device_type, api));
+   return api;
+-#endif
+ }
+ 
+ absl::StatusOr<bool> IsPjrtPluginInitialized(absl::string_view device_type) {
+diff --git a/xla/pjrt/pjrt_api_test.cc b/xla/pjrt/pjrt_api_test.cc
+--- a/xla/pjrt/pjrt_api_test.cc
++++ b/xla/pjrt/pjrt_api_test.cc
+@@ -54,6 +54,13 @@
+                   HasSubstr("PJRT_Api not found for device type tpu")));
+ }
+ 
++TEST(PjRtApiTest, MissingPluginReportsLibraryPath) {
++  const std::string path = "pjrt_missing_plugin_for_test.dll";
++  auto result = pjrt::LoadPjrtPlugin("missing_plugin", path);
++  EXPECT_FALSE(result.ok());
++  EXPECT_THAT(result.status().message(), HasSubstr(path));
++}
++
+ TEST(PjRtApiTest, InitPjRtPlugin) {
+   PJRT_Api api;
+   api.struct_size = PJRT_Api_STRUCT_SIZE;
+diff --git a/xla/stream_executor/cuda/cuda_diagnostics.cc b/xla/stream_executor/cuda/cuda_diagnostics.cc
+--- a/xla/stream_executor/cuda/cuda_diagnostics.cc
++++ b/xla/stream_executor/cuda/cuda_diagnostics.cc
+@@ -14,6 +14,8 @@
+ ==============================================================================*/
+ 
+ #include "xla/stream_executor/cuda/cuda_diagnostics.h"
++
++#include "tsl/platform/platform.h"
+ 
+ #if !defined(PLATFORM_WINDOWS)
+ #include <dirent.h>
+diff --git a/xla/stream_executor/cuda/BUILD b/xla/stream_executor/cuda/BUILD
+--- a/xla/stream_executor/cuda/BUILD
++++ b/xla/stream_executor/cuda/BUILD
+@@ -173,6 +173,7 @@
+         "@com_google_absl//absl/status:statusor",
+         "@com_google_absl//absl/strings",
+         "@com_google_absl//absl/strings:str_format",
++        "@tsl//tsl/platform:platform",
+         "@tsl//tsl/platform:platform_port",
+     ],
+ )
+@@ -557,7 +558,7 @@
+         "@com_google_absl//absl/strings:string_view",
+         "@local_config_cuda//cuda:cuda_headers",
+         "@local_config_cuda//cuda:cudnn_header",
+-    ],
++    ] + if_windows(["//xla/tsl/cuda:cudnn"]),
+ )
+ 
+ xla_cc_test(
+@@ -1774,9 +1775,14 @@
+         "//xla/tsl/cuda:tensorrt_rpath",
+     ] + if_nccl([
+         ":multi_gpu_barrier_kernel_cuda",
+-        ":ragged_all_to_all_device_kernel_cuda",
+         ":ragged_all_to_all_kernel_cuda",
+-    ]),
++    ]) + select({
++        # Native Windows NCCL does not expose the GIN device operations used
++        # by this experimental kernel. The thunk uses its existing fallback.
++        "//xla/tsl:windows": [],
++        "//xla/tsl:no_nccl_support": [],
++        "//conditions:default": [":ragged_all_to_all_device_kernel_cuda"],
++    }),
+     alwayslink = 1,
+ )
+ 
+diff --git a/xla/stream_executor/gpu/buffer_comparator_kernel_lib.cu.h b/xla/stream_executor/gpu/buffer_comparator_kernel_lib.cu.h
+--- a/xla/stream_executor/gpu/buffer_comparator_kernel_lib.cu.h
++++ b/xla/stream_executor/gpu/buffer_comparator_kernel_lib.cu.h
+@@ -109,7 +109,7 @@
+       elem_b = static_cast<uint64_t>(buffer_b[idx]);
+     }
+     float rel_error =
+-        fabs(elem_a - elem_b) / (fmax(fabs(elem_a), fabs(elem_b)) + 1);
++        fabs(elem_a - elem_b) / (fmaxf(fabs(elem_a), fabs(elem_b)) + 1);
+     if (rel_error > rel_error_threshold || isnan(rel_error)) {
+       atomicAdd(mismatch_count, 1);
+     }
+diff --git a/xla/stream_executor/cuda/buffer_debug_float_check_kernel_cuda.cu.cc b/xla/stream_executor/cuda/buffer_debug_float_check_kernel_cuda.cu.cc
+--- a/xla/stream_executor/cuda/buffer_debug_float_check_kernel_cuda.cu.cc
++++ b/xla/stream_executor/cuda/buffer_debug_float_check_kernel_cuda.cu.cc
+@@ -19,6 +19,7 @@
+ #include "absl/base/casts.h"
+ #include "Eigen/Core"
+ #include "third_party/gpus/cuda/include/cuda/atomic"
++#include "third_party/gpus/cuda/include/cuda_bf16.h"
+ #include "third_party/gpus/cuda/include/cuda_fp16.h"
+ #include "xla/stream_executor/cuda/cuda_platform_id.h"
+ #include "xla/stream_executor/gpu/buffer_debug_float_check_kernel.h"
+diff --git a/xla/stream_executor/cuda/cuda_executor.cc b/xla/stream_executor/cuda/cuda_executor.cc
+--- a/xla/stream_executor/cuda/cuda_executor.cc
++++ b/xla/stream_executor/cuda/cuda_executor.cc
+@@ -328,10 +328,10 @@
+ absl::StatusOr<std::string> GetDeviceName(CUdevice device) {
+   std::array<char, 64> chars;
+   ABSL_RETURN_IF_ERROR(
+-      cuda::ToStatus(cuDeviceGetName(chars.begin(), chars.size() - 1, device),
++      cuda::ToStatus(cuDeviceGetName(chars.data(), chars.size() - 1, device),
+                      "Failed to get device name"));
+   chars[chars.size() - 1] = '\0';
+-  return chars.begin();
++  return chars.data();
+ }
+ 
+ // Returns the compute capability for the device; i.e (3, 5).
+diff --git a/third_party/triton/oss_only/build_files.patch b/third_party/triton/oss_only/build_files.patch
+--- a/third_party/triton/oss_only/build_files.patch
++++ b/third_party/triton/oss_only/build_files.patch
+@@ -19,7 +19,7 @@
+ new file mode 100644
+ --- /dev/null
+ +++ b/BUILD
+-@@ -0,0 +1,1318 @@
++@@ -0,0 +1,1331 @@
+ +# This package imports OpenAI's Triton (https://github.com/triton-lang/triton).
+ +
+ +# copybara:uncomment load("@rules:copybara.bzl", "copybara_config_test")
+@@ -75,6 +75,15 @@
+ +    },
+ +)
+ +
+++config_setting(
+++    name = "compiler_is_windows_clang_cl",
+++    constraint_values = ["@platforms//os:windows"],
+++    flag_values = {
+++        "@bazel_tools" +  # copybara:comment
+++        "//tools/cpp:compiler": "clang-cl",
+++    },
+++)
+++
+ +# TODO(csigg): fix, enable error upstream, remove.
+ +_no_unused_variable = select({
+ +    ":compiler_is_msvc": [],
+@@ -607,6 +616,10 @@
+ +            "-Wno-ctad-maybe-unsupported",
+ +            "-Wno-implicit-fallthrough",
+ +        ],
+++    }) + select({
+++        # Parse MLIR templates before later using-directives affect lookup.
+++        ":compiler_is_windows_clang_cl": ["/clang:-fno-delayed-template-parsing"],
+++        "//conditions:default": [],
+ +    }),
+ +    includes = ["include"],
+ +    deps = [
+diff --git a/third_party/rmm/workspace.bzl b/third_party/rmm/workspace.bzl
+--- a/third_party/rmm/workspace.bzl
++++ b/third_party/rmm/workspace.bzl
+@@ -44,5 +44,11 @@
+         strip_prefix = "rmm-{version}".format(version = RMM_VERSION),
+         urls = tf_mirror_urls("https://github.com/rapidsai/rmm/archive/refs/tags/v{version}.tar.gz".format(version = RMM_VERSION)),
+         build_file = "//third_party/rmm:rmm.BUILD",
+-        patch_file = ["//third_party/rmm:logger_macros.hpp.patch"],
++        patch_file = [
++            "//third_party/rmm:logger_macros.hpp.patch",
++            # Bazel does not consume this metadata file; on case-insensitive
++            # filesystems it shadows the C++ standard library <version> header.
++            "//third_party/rmm:exclude_version.patch",
++            "//third_party/rmm:remove_unused_dlfcn.patch",
++        ],
+     )
+diff --git a/third_party/rmm/exclude_version.patch b/third_party/rmm/exclude_version.patch
+new file mode 100644
+--- /dev/null
++++ b/third_party/rmm/exclude_version.patch
+@@ -0,0 +1,6 @@
++diff --git a/VERSION b/VERSION
++deleted file mode 100644
++--- a/VERSION
+++++ /dev/null
++@@ -1 +0,0 @@
++-26.02.00
+diff --git a/third_party/rapids_logger/workspace.bzl b/third_party/rapids_logger/workspace.bzl
+--- a/third_party/rapids_logger/workspace.bzl
++++ b/third_party/rapids_logger/workspace.bzl
+@@ -44,5 +44,10 @@
+         strip_prefix = "rapids-logger-{version}".format(version = RAPIDS_LOGGER_VERSION),
+         urls = tf_mirror_urls("https://github.com/rapidsai/rapids-logger/archive/refs/tags/v{version}.tar.gz".format(version = RAPIDS_LOGGER_VERSION)),
+         build_file = "//third_party/rapids_logger:rapids_logger.BUILD",
+-        patch_file = ["//third_party/rapids_logger:smoke_test.cc.patch"],
++        patch_file = [
++            "//third_party/rapids_logger:smoke_test.cc.patch",
++            # Bazel does not consume this metadata file; on case-insensitive
++            # filesystems it shadows the C++ standard library <version> header.
++            "//third_party/rapids_logger:exclude_version.patch",
++        ],
+     )
+diff --git a/third_party/rapids_logger/exclude_version.patch b/third_party/rapids_logger/exclude_version.patch
+new file mode 100644
+--- /dev/null
++++ b/third_party/rapids_logger/exclude_version.patch
+@@ -0,0 +1,6 @@
++diff --git a/VERSION b/VERSION
++deleted file mode 100644
++--- a/VERSION
+++++ /dev/null
++@@ -1 +0,0 @@
++-0.2.3
+diff --git a/third_party/rmm/remove_unused_dlfcn.patch b/third_party/rmm/remove_unused_dlfcn.patch
+new file mode 100644
+--- /dev/null
++++ b/third_party/rmm/remove_unused_dlfcn.patch
+@@ -0,0 +1,12 @@
++diff --git a/cpp/include/rmm/detail/runtime_capabilities.hpp b/cpp/include/rmm/detail/runtime_capabilities.hpp
++--- a/cpp/include/rmm/detail/runtime_capabilities.hpp
+++++ b/cpp/include/rmm/detail/runtime_capabilities.hpp
++@@ -9,8 +9,6 @@
++ #include <rmm/detail/export.hpp>
++ 
++ #include <cuda_runtime_api.h>
++-
++-#include <dlfcn.h>
++ 
++ namespace RMM_NAMESPACE {
++ namespace detail {
+diff --git a/third_party/raft/workspace.bzl b/third_party/raft/workspace.bzl
+--- a/third_party/raft/workspace.bzl
++++ b/third_party/raft/workspace.bzl
+@@ -59,5 +59,10 @@
+             "//third_party/raft:select_k_runner.hpp.patch",
+             "//third_party/raft:select_k_runner.cu.cc.patch",
+             "//third_party/raft:select_k_smoke_test.cu.cc.patch",
++            # This metadata filename shadows the C++ <version> header on Windows.
++            "//third_party/raft:exclude_version.patch",
++            "//third_party/raft:remove_unused_execinfo.patch",
++            "//third_party/raft:long_atomics.patch",
++            "//third_party/raft:vectorized_windows.patch",
+         ],
+     )
+diff --git a/third_party/raft/exclude_version.patch b/third_party/raft/exclude_version.patch
+new file mode 100644
+--- /dev/null
++++ b/third_party/raft/exclude_version.patch
+@@ -0,0 +1,6 @@
++diff --git a/VERSION b/VERSION
++deleted file mode 100644
++--- a/VERSION
+++++ /dev/null
++@@ -1 +0,0 @@
++-26.02.00
+diff --git a/third_party/raft/remove_unused_execinfo.patch b/third_party/raft/remove_unused_execinfo.patch
+new file mode 100644
+--- /dev/null
++++ b/third_party/raft/remove_unused_execinfo.patch
+@@ -0,0 +1,12 @@
++diff --git a/cpp/include/raft/util/cudart_utils.hpp b/cpp/include/raft/util/cudart_utils.hpp
++--- a/cpp/include/raft/util/cudart_utils.hpp
+++++ b/cpp/include/raft/util/cudart_utils.hpp
++@@ -13,8 +13,6 @@
++ #include <cuda_bf16.h>
++ #include <cuda_fp16.h>
++ #include <cuda_runtime_api.h>
++-
++-#include <execinfo.h>
++ 
++ #include <chrono>
++ #include <cstdio>
+diff --git a/third_party/triton/workspace.bzl b/third_party/triton/workspace.bzl
+--- a/third_party/triton/workspace.bzl
++++ b/third_party/triton/workspace.bzl
+@@ -76,5 +76,7 @@
+         sha256 = TRITON_SHA256,
+         strip_prefix = "triton-" + TRITON_COMMIT,
+         urls = tf_mirror_urls("https://github.com/triton-lang/triton/archive/{}.tar.gz".format(TRITON_COMMIT)),
+-        patch_file = common_patch_list + oss_only_patch_list,
++        patch_file = common_patch_list + oss_only_patch_list + [
++            "//third_party/triton:oss_only/windows_build.patch",
++        ],
+     )
+diff --git a/third_party/triton/oss_only/windows_build.patch b/third_party/triton/oss_only/windows_build.patch
+new file mode 100644
+--- /dev/null
++++ b/third_party/triton/oss_only/windows_build.patch
+@@ -0,0 +1,48 @@
++diff --git a/lib/Dialect/TritonGPU/Transforms/WarpSpecialization/PartitionLoops.cpp b/lib/Dialect/TritonGPU/Transforms/WarpSpecialization/PartitionLoops.cpp
++--- a/lib/Dialect/TritonGPU/Transforms/WarpSpecialization/PartitionLoops.cpp
+++++ b/lib/Dialect/TritonGPU/Transforms/WarpSpecialization/PartitionLoops.cpp
++@@ -489,7 +489,7 @@
++     return success();
++ 
++   auto numPartitions = partitions.getNumPartitions();
++-  auto defaultPartition = partitions.getPartition((int)0);
+++  auto defaultPartition = partitions.getPartition(0u);
++   auto loopVarCategories = classifyLoopVars(loop, defaultPartition, partitions);
++   auto [loopVarIndices, newResultIndices] =
++       getLoopVarIndicesToKeep(loop, defaultPartition, loopVarCategories);
++diff --git a/third_party/amd/include/TritonAMDGPUToLLVM/GCNAsmFormat.h b/third_party/amd/include/TritonAMDGPUToLLVM/GCNAsmFormat.h
++--- a/third_party/amd/include/TritonAMDGPUToLLVM/GCNAsmFormat.h
+++++ b/third_party/amd/include/TritonAMDGPUToLLVM/GCNAsmFormat.h
++@@ -40,9 +40,9 @@
++ namespace mlir::triton {
++ using llvm::StringRef;
++ 
++-class GCNInstr;
++-class GCNInstrCommon;
++-class GCNInstrExecution;
+++struct GCNInstr;
+++struct GCNInstrCommon;
+++struct GCNInstrExecution;
++ 
++ // GCNBuilder helps to manage a GCN asm program consists of one or multiple
++ // instructions.
++@@ -238,8 +238,8 @@
++     return modArchive.back().get();
++   }
++ 
++-  friend class GCNInstr;
++-  friend class GCNInstrCommon;
+++  friend struct GCNInstr;
+++  friend struct GCNInstrCommon;
++ 
++ protected:
++   llvm::SmallVector<std::unique_ptr<Operand>, 6> argArchive;
++@@ -279,7 +279,7 @@
++   GCNBuilder *builder{};
++   llvm::SmallVector<std::string, 4> instrParts;
++ 
++-  friend class GCNInstrExecution;
+++  friend struct GCNInstrExecution;
++ };
++ 
++ template <class ConcreteT> struct GCNInstrBase : public GCNInstrCommon {
+diff --git a/xla/util/build_defs.bzl b/xla/util/build_defs.bzl
+--- a/xla/util/build_defs.bzl
++++ b/xla/util/build_defs.bzl
+@@ -16,6 +16,7 @@
+ """Contains embed_files build rule."""
+ 
+ load("@bazel_skylib//lib:new_sets.bzl", "sets")
++load("@bazel_skylib//lib:shell.bzl", "shell")
+ load("@com_google_protobuf//bazel/common:proto_info.bzl", "ProtoInfo")
+ load("//xla/tsl:package_groups.bzl", "DEFAULT_LOAD_VISIBILITY")
+ 
+@@ -40,7 +41,7 @@
+     proto_descriptor_sets = _descriptor_set_list(ctx.attr.deps, ctx.file.descriptor_set)
+ 
+     descriptor_set_in = ("--descriptor_set_in=%s" %
+-                         ":".join([file.path for file in proto_descriptor_sets]))
++                         ctx.configuration.host_path_separator.join([file.path for file in proto_descriptor_sets]))
+ 
+     if len(ctx.outputs.outs) != 1:
+         fail("Expected exactly one output")
+@@ -52,8 +53,8 @@
+         descriptor_set_in,
+     ]
+     redirect = [
+-        "< %s" % ctx.file.src.path,
+-        "> %s" % out.path,
++        "< %s" % shell.quote(ctx.file.src.path),
++        "> %s" % shell.quote(out.path),
+     ]
+ 
+     # If command line will be long, use flag file
+@@ -68,7 +69,7 @@
+             outputs = ctx.outputs.outs,
+             inputs = [ctx.file.src, flagfile] + proto_descriptor_sets,
+             tools = [ctx.executable._tool],
+-            command = " ".join([ctx.executable._tool.path, "@%s" % flagfile.path] + redirect),
++            command = " ".join([shell.quote(ctx.executable._tool.path), shell.quote("@%s" % flagfile.path)] + redirect),
+             mnemonic = "ProtoDataCompilerFlagfile",
+             use_default_shell_env = False,
+         )
+@@ -79,7 +80,7 @@
+             outputs = ctx.outputs.outs,
+             inputs = [ctx.file.src] + proto_descriptor_sets,
+             tools = [ctx.executable._tool],
+-            command = " ".join([ctx.executable._tool.path] + protoc_args + redirect),
++            command = " ".join([shell.quote(arg) for arg in [ctx.executable._tool.path] + protoc_args] + redirect),
+             mnemonic = "ProtoDataCompiler",
+             use_default_shell_env = False,
+         )
+diff --git a/third_party/raft/long_atomics.patch b/third_party/raft/long_atomics.patch
+new file mode 100644
+--- /dev/null
++++ b/third_party/raft/long_atomics.patch
+@@ -0,0 +1,43 @@
++diff --git a/cpp/include/raft/util/device_atomics.cuh b/cpp/include/raft/util/device_atomics.cuh
++--- a/cpp/include/raft/util/device_atomics.cuh
+++++ b/cpp/include/raft/util/device_atomics.cuh
++@@ -18,6 +18,7 @@
++ 
++ #include <cooperative_groups.h>
++ 
+++#include <climits>
++ #include <type_traits>
++ 
++ namespace raft {
++@@ -239,6 +240,7 @@
++ // those for unsigned binary numbers.
++ // Then, this computes as `unsigned long long int` with `atomicAdd`
++ // @sa https://en.wikipedia.org/wiki/Two%27s_complement
+++#if LONG_MAX == LLONG_MAX
++ template <>
++ struct genericAtomicOperationImpl<long int, DeviceSum, 8> {
++   using T = long int;
++@@ -262,6 +264,7 @@
++     return type_reinterpret<T, T_int>(ret);
++   }
++ };
+++#endif  // LONG_MAX == LLONG_MAX
++ 
++ // CUDA natively supports `unsigned long long int` for `atomicAdd`,
++ // but doesn't supports `long long int`.
++@@ -282,6 +285,7 @@
++   }
++ };
++ 
+++#if LONG_MAX == LLONG_MAX
++ template <>
++ struct genericAtomicOperationImpl<unsigned long int, DeviceMin, 8> {
++   using T = unsigned long int;
++@@ -305,6 +309,7 @@
++     return type_reinterpret<T, T_int>(ret);
++   }
++ };
+++#endif  // LONG_MAX == LLONG_MAX
++ 
++ template <typename T>
++ struct genericAtomicOperationImpl<T, DeviceAnd, 8> {
+diff --git a/third_party/raft/vectorized_windows.patch b/third_party/raft/vectorized_windows.patch
+new file mode 100644
+--- /dev/null
++++ b/third_party/raft/vectorized_windows.patch
+@@ -0,0 +1,20 @@
++diff --git a/cpp/include/raft/util/vectorized.cuh b/cpp/include/raft/util/vectorized.cuh
++--- a/cpp/include/raft/util/vectorized.cuh
+++++ b/cpp/include/raft/util/vectorized.cuh
++@@ -215,6 +215,8 @@
++ struct IOType<uint64_t, 2> {
++   typedef uint4 Type;
++ };
+++// On Windows, uint64_t already aliases unsigned long long.
+++#if !defined(_WIN32)
++ template <>
++ struct IOType<unsigned long long, 1> {
++   typedef unsigned long long Type;
++@@ -223,6 +225,7 @@
++ struct IOType<unsigned long long, 2> {
++   typedef uint4 Type;
++ };
+++#endif
++ template <>
++ struct IOType<double, 1> {
++   typedef double Type;
+diff --git a/xla/tsl/BUILD b/xla/tsl/BUILD
+--- a/xla/tsl/BUILD
++++ b/xla/tsl/BUILD
+@@ -216,6 +216,15 @@
+     constraint_values = [
+         "@platforms//os:windows",
+     ],
++    visibility = ["//visibility:public"],
++)
++
++# Windows NCCL is enabled only when explicitly requested by a native build.
++config_setting(
++    name = "windows_nccl",
++    constraint_values = ["@platforms//os:windows"],
++    define_values = {"no_nccl_support": "false"},
++    flag_values = {":no_nccl_support_flag": "false"},
+     visibility = ["//visibility:public"],
+ )
+ 
+diff --git a/xla/tsl/tsl.bzl b/xla/tsl/tsl.bzl
+--- a/xla/tsl/tsl.bzl
++++ b/xla/tsl/tsl.bzl
+@@ -241,10 +241,12 @@
+         "//conditions:default": [],
+     })
+ 
+-# Enabled unless Windows or actively disabled, even without --config=cuda.
++# Enabled unless actively disabled or Windows without an explicit native opt-in,
++# even without --config=cuda.
+ # Combine with 'if_gpu_is_configured' (XLA) or 'if_cuda_or_rocm' (otherwise).
+ def if_nccl(if_true, if_false = []):
+     return select({
++        clean_dep("//xla/tsl:windows_nccl"): if_true,
+         clean_dep("//xla/tsl:no_nccl_support"): if_false,
+         clean_dep("//xla/tsl:windows"): if_false,
+         "//conditions:default": if_true,
+diff --git a/xla/backends/gpu/runtime/ragged_all_to_all_thunk.h b/xla/backends/gpu/runtime/ragged_all_to_all_thunk.h
+--- a/xla/backends/gpu/runtime/ragged_all_to_all_thunk.h
++++ b/xla/backends/gpu/runtime/ragged_all_to_all_thunk.h
+@@ -181,7 +181,13 @@
+   }
+ 
+   bool UsesDeviceKernel() const {
++#if defined(_WIN32)
++    // Native Windows NCCL does not implement the GIN device operations used
++    // by this kernel. Preserve the ordinary collective/one-shot fallback.
++    return false;
++#else
+     return config_.use_device_kernel && config_.config.use_symmetric_buffer;
++#endif
+   }
+ 
+   // Number of per-CTA barrier/signal slots reserved when creating the device

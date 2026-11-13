@@ -1,0 +1,757 @@
+diff --git a/MODULE.bazel b/MODULE.bazel
+--- a/MODULE.bazel
++++ b/MODULE.bazel
+@@ -15,6 +15,12 @@
+ bazel_dep(name = "protobuf", version = "32.1", repo_name = "com_google_protobuf")
+ bazel_dep(name = "pybind11_bazel", version = "3.0.0")
+ bazel_dep(name = "rules_cc", version = "0.2.20")
++single_version_override(
++    module_name = "rules_cc",
++    version = "0.2.20",
++    patch_strip = 1,
++    patches = ["//third_party/rules_cc:windows_cuda.patch"],
++)
+ bazel_dep(name = "rules_python", version = "2.2.0")
+ bazel_dep(name = "zlib", version = "1.3.2")
+ 
+@@ -22,6 +28,8 @@
+ bazel_dep(name = "rules_ml_toolchain")
+ archive_override(
+     module_name = "rules_ml_toolchain",
++    patch_strip = 1,
++    patches = ["//third_party/rules_ml_toolchain:windows_cuda.patch"],
+     integrity = "sha256-AD+fcA+AoQ9wvsdh0AUpI30WpuIMBjEkyf/6mKjArzU=",
+     strip_prefix = "rules_ml_toolchain-c0eb2743b7b12b2bbcf0e1888e26d36ba6b093de",
+     urls = ["https://github.com/google-ml-infra/rules_ml_toolchain/archive/c0eb2743b7b12b2bbcf0e1888e26d36ba6b093de.tar.gz"],
+@@ -39,6 +47,7 @@
+         "//third_party/xla:llvm_windows_arm64_native_triple.patch",
+         "//third_party/xla:onednn_async_aarch64.patch",
+         "//third_party/xla:onednn_gemm_bfloat16.patch",
++        "//third_party/xla:windows_arm64_cuda.patch",
+     ],
+     integrity = "sha256-MsuAh9iDGKAfmXTq1iVOHKBtJj+hhH9hUDN5UlvUaJc=",
+     strip_prefix = "xla-91888df6ce85102c30220e41d952065925e10886",
+@@ -127,6 +136,7 @@
+     patches = [
+         "//third_party/protobuf:protobuf_arena.patch",
+         "//third_party/protobuf:fix_message_lite_incomplete_type.patch",
++        "//third_party/protobuf:windows_cuda.patch",
+     ],
+     version = "32.1",
+ )
+@@ -137,6 +147,7 @@
+     patches = [
+         "//third_party/absl:btree.patch",
+         "//third_party/absl:raw_hash_set.patch",
++        "//third_party/absl:windows_cuda.patch",
+     ],
+     version = "20260526.0",
+ )
+@@ -262,6 +273,9 @@
+     "cuda_nvvm",
+ )
+ 
++nccl_redist = use_extension("@rules_ml_toolchain//extensions:nccl_redist.bzl", "nccl_redist_ext")
++use_repo(nccl_redist, "cuda_nccl")
++
+ nvshmem_redist = use_extension("@rules_ml_toolchain//extensions:nvshmem_redist.bzl", "nvshmem_redist_ext")
+ use_repo(nvshmem_redist, "nvidia_nvshmem")
+ 
+--- /dev/null
++++ b/third_party/rules_ml_toolchain/BUILD.bazel
+@@ -0,0 +1 @@
++exports_files(["windows_cuda.patch"])
+--- a/jax_plugins/cuda/BUILD.bazel
++++ b/jax_plugins/cuda/BUILD.bazel
+@@ -14,6 +14,7 @@
+ 
+ load(
+     "//jaxlib:jax.bzl",
++    "if_windows",
+     "py_library_providing_imports_info",
+     "pytype_library",
+ )
+@@ -35,10 +36,17 @@
+ 
+ cc_binary(
+     name = "pjrt_c_api_gpu_plugin.so",
+-    linkopts = [
+-        "-Wl,--version-script,$(location :gpu_version_script.lds)",
+-        "-Wl,--no-undefined",
+-    ],
++    linkopts = if_windows(
++        [
++            "/EXPORT:GetPjrtApi",
++            "/EXPORT:MosaicGpuCompile",
++            "/EXPORT:MosaicGpuUnload",
++        ],
++        [
++            "-Wl,--version-script,$(location :gpu_version_script.lds)",
++            "-Wl,--no-undefined",
++        ],
++    ),
+     linkshared = True,
+     deps = [
+         ":gpu_version_script.lds",
+--- a/jaxlib/mosaic/gpu/BUILD
++++ b/jaxlib/mosaic/gpu/BUILD
+@@ -17,7 +17,7 @@
+ load("@rules_cc//cc:cc_test.bzl", "cc_test")
+ # Placeholder: load proto_library
+ 
+-load("//jaxlib:jax.bzl", "cc_proto_library", "if_oss", "nanobind_extension", "py_library")
++load("//jaxlib:jax.bzl", "cc_proto_library", "if_oss", "if_windows", "nanobind_extension", "py_library")
+ 
+ package(
+     default_applicable_licenses = [],
+@@ -253,7 +253,10 @@
+     name = "runtime",
+     srcs = ["runtime.cc"],
+     # Linker may prune these symbols if they are not explicitly exported.
+-    linkopts = [
++    linkopts = if_windows([
++        "/EXPORT:mosaic_gpu_init_tma_desc",
++        "/EXPORT:mosaic_gpu_launch_kernel",
++    ], [
+         "-Wl,--export-dynamic-symbol='mosaic_gpu_*'",
+         "-Wl,--export-dynamic-symbol='nvshmem_my_pe'",
+         "-Wl,--export-dynamic-symbol='nvshmem_n_pes'",
+@@ -263,8 +266,11 @@
+         "-Wl,--export-dynamic-symbol='nvshmemx_cumodule_init'",
+         "-Wl,--export-dynamic-symbol='nvshmemx_init_status'",
+         "-Wl,--export-dynamic-symbol='nvshmemx_mc_ptr'",
+-    ],
+-    deps = ["@local_config_cuda//cuda:cuda_headers"],
++    ]),
++    deps = [
++        "@local_config_cuda//cuda:cuda_headers",
++        "@xla//xla/tsl/cuda:cuda",
++    ],
+     alwayslink = True,
+ )
+ 
+@@ -448,6 +454,10 @@
+     name = "libmosaic_gpu_runtime.so",
+     srcs = ["runtime.cc"],
+     copts = ["-fvisibility=default"],
++    linkopts = if_windows([
++        "/EXPORT:mosaic_gpu_init_tma_desc",
++        "/EXPORT:mosaic_gpu_launch_kernel",
++    ]),
+     linkshared = 1,
+     tags = [
+         "manual",
+@@ -455,6 +465,7 @@
+     ],
+     deps = [
+         "@local_config_cuda//cuda:cuda_headers",
++        "@xla//xla/tsl/cuda:cuda",
+         "@xla//xla/tsl/cuda:cudart",
+     ],
+ )
+--- a/jaxlib/mosaic/gpu/custom_call.cc
++++ b/jaxlib/mosaic/gpu/custom_call.cc
+@@ -12,11 +12,6 @@
+ See the License for the specific language governing permissions and
+ limitations under the License.
+ ==============================================================================*/
+-
+-#include <fcntl.h>
+-#include <spawn.h>
+-#include <sys/wait.h>
+-#include <unistd.h>
+ 
+ #include <algorithm>
+ #include <array>
+--- a/jaxlib/mosaic/gpu/nvshmem.h
++++ b/jaxlib/mosaic/gpu/nvshmem.h
+@@ -16,7 +16,9 @@
+ #ifndef JAXLIB_MOSAIC_GPU_COMM_H_
+ #define JAXLIB_MOSAIC_GPU_COMM_H_
+ 
++#if !defined(_WIN32)
+ #include <dlfcn.h>
++#endif
+ 
+ #include <cstdio>
+ #include <cstdlib>
+@@ -74,6 +76,9 @@
+ 
+  private:
+   NvshmemApi() {
++    // NVSHMEM is unavailable on Windows. Keep is_loaded() false so callers
++    // report an unsupported operation instead of resolving POSIX symbols.
++#if !defined(_WIN32)
+     const char* env_value = getenv("MOSAIC_GPU_NVSHMEM_SO_PATH");
+     const char* libnvshmem_path =
+         env_value && *env_value != 0 ? env_value : nullptr;
+@@ -88,13 +93,14 @@
+     NVSHMEM_SET_FN(nvshmemx_cumodule_init)
+     NVSHMEM_SET_FN(nvshmemx_init_status)
+     NVSHMEM_SET_FN(nvshmem_n_pes);
++#endif
+   }
+ 
+-  int (*nvshmemx_barrier_all_on_stream)(cudaStream_t);
+-  int (*nvshmemx_cumodule_finalize)(CUmodule);
+-  int (*nvshmemx_cumodule_init)(CUmodule);
+-  int (*nvshmemx_init_status)();
+-  int (*nvshmem_n_pes)();
++  int (*nvshmemx_barrier_all_on_stream)(cudaStream_t) = nullptr;
++  int (*nvshmemx_cumodule_finalize)(CUmodule) = nullptr;
++  int (*nvshmemx_cumodule_init)(CUmodule) = nullptr;
++  int (*nvshmemx_init_status)() = nullptr;
++  int (*nvshmem_n_pes)() = nullptr;
+ 
+   std::mutex mutex_;
+ };
+--- a/jaxlib/gpu/hybrid_kernels.cc
++++ b/jaxlib/gpu/hybrid_kernels.cc
+@@ -15,7 +15,14 @@
+ 
+ #include "jaxlib/gpu/hybrid_kernels.h"
+ 
++#if defined(_WIN32)
++#ifndef NOMINMAX
++#define NOMINMAX
++#endif
++#include <windows.h>
++#else
+ #include <dlfcn.h>
++#endif
+ 
+ #include <algorithm>
+ #include <cstddef>
+@@ -47,6 +54,37 @@
+ 
+ namespace ffi = ::xla::ffi;
+ 
++namespace {
++void* OpenMagmaLibrary(const char* path) {
++#if defined(_WIN32)
++  if (path != nullptr) return LoadLibraryA(path);
++  HMODULE module = nullptr;
++  // Retain a reference, matching the destructor's FreeLibrary call.
++  GetModuleHandleExA(0, nullptr, &module);
++  return module;
++#else
++  return dlopen(path, RTLD_LAZY);
++#endif
++}
++
++void* LookupMagmaSymbol(void* handle, const char* symbol) {
++#if defined(_WIN32)
++  return reinterpret_cast<void*>(
++      GetProcAddress(static_cast<HMODULE>(handle), symbol));
++#else
++  return dlsym(handle, symbol);
++#endif
++}
++
++void CloseMagmaLibrary(void* handle) {
++#if defined(_WIN32)
++  FreeLibrary(static_cast<HMODULE>(handle));
++#else
++  dlclose(handle);
++#endif
++}
++}  // namespace
++
+ // This helper class is used to define a host buffer that can be copied to and
+ // from a device buffer.
+ template <typename T>
+@@ -134,13 +172,13 @@
+ 
+ MagmaLookup::~MagmaLookup() {
+   if (initialized_) {
+-    void* magma_finalize = dlsym(handle_, "magma_finalize");
++    void* magma_finalize = LookupMagmaSymbol(handle_, "magma_finalize");
+     if (magma_finalize != nullptr) {
+       reinterpret_cast<void (*)()>(magma_finalize)();
+     }
+   }
+   if (handle_ != nullptr) {
+-    dlclose(handle_);
++    CloseMagmaLibrary(handle_);
+   }
+ }
+ 
+@@ -151,14 +189,19 @@
+   if (magma_lib_path != nullptr) {
+     paths.push_back(magma_lib_path);
+   } else {
++#if defined(_WIN32)
++    paths.push_back("magma.dll");
++    paths.push_back("libmagma.dll");
++#else
+     paths.push_back("libmagma.so.2");
+     paths.push_back("libmagma.so");
++#endif
+     paths.push_back(nullptr);
+   }
+   for (const auto& path : paths) {
+-    handle_ = dlopen(path, RTLD_LAZY);
++    handle_ = OpenMagmaLibrary(path);
+     if (handle_ != nullptr) {
+-      magma_init = dlsym(handle_, "magma_init");
++      magma_init = LookupMagmaSymbol(handle_, "magma_init");
+       if (magma_init != nullptr) {
+         if (path != nullptr) {
+           lib_path_ = std::string(path);
+@@ -200,7 +243,7 @@
+   auto it = symbols_.find(name);
+   if (it != symbols_.end()) return it->second;
+ 
+-  void* symbol = dlsym(handle_, name);
++  void* symbol = LookupMagmaSymbol(handle_, name);
+   if (symbol == nullptr) {
+     if (lib_path_.has_value()) {
+       return absl::InternalError(absl::StrFormat(
+--- a/jax_plugins/cuda/__init__.py
++++ b/jax_plugins/cuda/__init__.py
+@@ -122,6 +122,10 @@
+   We prefer the Python packages, if present. If not, we fall back to loading
+   them from LD_LIBRARY_PATH. By loading the libraries here, later lookups will
+   find these copies."""
++  if os.name == "nt":
++    from jaxlib.plugin_support import initialize_windows_cuda_dll_search_path
++    initialize_windows_cuda_dll_search_path()
++    return
+   _load("cuda_runtime", ["libcudart.so.12"])
+   _load("cu13", ["libcudart.so.13"])
+   # cuda_nvrtc isn't directly a dependency of JAX, but CUDNN appears to need it
+--- /dev/null
++++ b/third_party/rules_cc/BUILD.bazel
+@@ -0,0 +1 @@
++exports_files(["windows_cuda.patch"])
+diff --git a/jaxlib/plugin_support.py b/jaxlib/plugin_support.py
+--- a/jaxlib/plugin_support.py
++++ b/jaxlib/plugin_support.py
+@@ -14,11 +14,61 @@
+ 
+ from collections.abc import Sequence
+ import importlib
++import importlib.util
++import os
++import pathlib
+ import re
+ from types import ModuleType
+ import warnings
+ 
+ from .version import __version__ as jaxlib_version
++
++
++# Keep AddDllDirectory handles alive for imported CUDA extensions.
++_windows_cuda_dll_directories = {}
++
++
++def initialize_windows_cuda_dll_search_path() -> None:
++  """Register toolkit DLL directories before importing CUDA extensions."""
++  if os.name != "nt":
++    return
++  # A top-level spec lookup does not execute the package, including when its
++  # __init__ calls this helper before importing CUDA extensions.
++  bundled_nccl = False
++  spec = importlib.util.find_spec("jax_cuda13_plugin")
++  if spec is not None and spec.submodule_search_locations:
++    for location in spec.submodule_search_locations:
++      directory = pathlib.Path(location).resolve()
++      if not (directory / "nccl.dll").is_file():
++        continue
++      bundled_nccl = True
++      if directory not in _windows_cuda_dll_directories:
++        _windows_cuda_dll_directories[directory] = os.add_dll_directory(
++            str(directory)
++        )
++  # Installers can put cuDNN beneath a versioned bin/<version>/arm64 folder.
++  # Register the explicit leaf directory in every interpreter, including tests'
++  # subprocesses, before importing extensions that depend on cuDNN.
++  cudnn_bin = os.environ.get("CUDNN_BIN_PATH")
++  if cudnn_bin:
++    directory = pathlib.Path(cudnn_bin).resolve()
++    if directory.is_dir() and directory not in _windows_cuda_dll_directories:
++      _windows_cuda_dll_directories[directory] = os.add_dll_directory(
++          str(directory)
++      )
++  for variable in ("CUDA_PATH", "CUDNN_PATH", "NCCL_PATH", "CUPTI_PATH"):
++    # AddDllDirectory does not define ordering between registered directories.
++    if variable == "NCCL_PATH" and bundled_nccl:
++      continue
++    root = os.environ.get(variable)
++    if not root:
++      continue
++    for relative in ("bin", "bin/arm64", "lib/arm64"):
++      directory = pathlib.Path(root).resolve() / relative
++      if directory.is_dir() and directory not in _windows_cuda_dll_directories:
++        _windows_cuda_dll_directories[directory] = os.add_dll_directory(
++            str(directory)
++        )
+ 
+ 
+ _PLUGIN_MODULE_NAMES = {
+diff --git a/jaxlib/tools/build_gpu_kernels_wheel.py b/jaxlib/tools/build_gpu_kernels_wheel.py
+--- a/jaxlib/tools/build_gpu_kernels_wheel.py
++++ b/jaxlib/tools/build_gpu_kernels_wheel.py
+@@ -92,6 +92,19 @@
+ [bdist_wheel]
+ plat_name={tag}
+ """)
++
++
++def _copy_windows_nccl_runtime(plugin_dir, copy_files, wheel_sources):
++  """Bundle NCCL from declared Bazel inputs alongside the CUDA extensions."""
++  if build_utils.is_windows():
++    prefix = "" if wheel_sources else "cuda_nccl/"
++    copy_files(
++        src_files=[
++            f"{prefix}runtime/nccl.dll",
++            f"{prefix}runtime/LICENSE.nccl.txt",
++        ],
++        dst_dir=plugin_dir,
++    )
+ 
+ 
+ def prepare_wheel_cuda(
+@@ -135,7 +148,14 @@
+ 
+   plugin_dir = wheel_sources_path / f"jax_cuda{cuda_version}_plugin"
+   plugin_dir.mkdir(parents=True, exist_ok=True)
+-  (plugin_dir / "__init__.py").touch()
++  _copy_windows_nccl_runtime(plugin_dir, copy_files, wheel_sources)
++  (plugin_dir / "__init__.py").write_text(
++      "import sys\n"
++      "\n"
++      "if sys.platform == 'win32':\n"
++      "  from jaxlib.plugin_support import initialize_windows_cuda_dll_search_path\n"
++      "  initialize_windows_cuda_dll_search_path()\n"
++  )
+   copy_files(
+       dst_dir=plugin_dir,
+       src_files=[
+--- a/jax/_src/lib/__init__.py
++++ b/jax/_src/lib/__init__.py
+@@ -153,8 +153,11 @@
+ 
+ def _cuda_path() -> str | None:
+   def _try_cuda_root_environment_variable() -> str | None:
+-    """Use `CUDA_ROOT` environment variable if set."""
+-    return os.environ.get('CUDA_ROOT', None)
++    """Use `CUDA_ROOT`, or the Windows toolkit's `CUDA_PATH`."""
++    root = os.environ.get('CUDA_ROOT', None)
++    if root is None and os.name == 'nt':
++      root = os.environ.get('CUDA_PATH', None)
++    return root
+ 
+   def _try_cuda_nvcc_import() -> str | None:
+     """Try to import `cuda_nvcc` and get its path directly.
+diff --git a/jaxlib/tridiagonal_solve_perturbed.h b/jaxlib/tridiagonal_solve_perturbed.h
+--- a/jaxlib/tridiagonal_solve_perturbed.h
++++ b/jaxlib/tridiagonal_solve_perturbed.h
+@@ -24,6 +24,7 @@
+ #include "Eigen/Core"
+ 
+ #if defined(__CUDACC__) || defined(JAX_GPU_CUDA)
++#include <cuda/std/cmath>
+ #include <cuda/std/complex>
+ 
+ namespace Eigen {
+@@ -60,6 +61,17 @@
+ #endif
+ 
+ namespace jax {
++
++template <typename T>
++EIGEN_DEVICE_FUNC T TridiagonalCopySign(T magnitude, T sign) {
++#if defined(__CUDACC__) || defined(JAX_GPU_CUDA)
++  // Clang's Windows CUDA headers declare the float std::copysign device
++  // overload without defining it. libcudacxx provides a device implementation.
++  return ::cuda::std::copysign(magnitude, sign);
++#else
++  return std::copysign(magnitude, sign);
++#endif
++}
+ 
+ // Adjust pivot such that neither 'rhs[i,:] / pivot' nor '1 / pivot' cause
+ // overflow, where i numerates the multiple right-hand-sides. During the
+@@ -92,7 +104,7 @@
+   // 'perturb' should never have magnitude smaller than safemin.
+   perturb = std::max(Eigen::numext::abs(perturb), safemin);
+   // Make sure perturb and pivot have the same sign.
+-  perturb = std::copysign(perturb, real(pivot));
++  perturb = TridiagonalCopySign(perturb, real(pivot));
+ 
+   bool stop = false;
+   const RealScalar max_factor = rhs_row.derived().array().abs().maxCoeff();
+@@ -268,14 +280,14 @@
+   if (n > 1) {
+     p = u(n - 2, 0);
+     rhs_row = x.row(n - 2) - u(n - 2, 1) * x.row(n - 1);
+-    MaybePerturbPivot(std::copysign(perturb, real(p)), p, rhs_row);
++    MaybePerturbPivot(TridiagonalCopySign(perturb, real(p)), p, rhs_row);
+     x.row(n - 2) = rhs_row * (Scalar(1.0) / p);
+   }
+ 
+   for (int k = n - 3; k >= 0; --k) {
+     p = u(k, 0);
+     rhs_row = x.row(k) - u(k, 1) * x.row(k + 1) - u(k, 2) * x.row(k + 2);
+-    MaybePerturbPivot(std::copysign(perturb, real(p)), p, rhs_row);
++    MaybePerturbPivot(TridiagonalCopySign(perturb, real(p)), p, rhs_row);
+     x.row(k) = rhs_row * (Scalar(1.0) / p);
+   }
+ }
+diff --git a/jaxlib/cuda/BUILD b/jaxlib/cuda/BUILD
+--- a/jaxlib/cuda/BUILD
++++ b/jaxlib/cuda/BUILD
+@@ -66,6 +66,8 @@
+         "@com_google_absl//absl/strings",
+         "@com_google_absl//absl/strings:str_format",
+         "@local_config_cuda//cuda:cuda_headers",
++        "@xla//xla/tsl/cuda:cuda",
++        "@xla//xla/tsl/cuda:cudart",
+         "@xla//xla/tsl/cuda:cupti",
+         "@xla//xla/tsl/cuda:cusolver",
+         "@xla//xla/tsl/cuda:cusparse",
+diff --git a/jaxlib/tools/BUILD.bazel b/jaxlib/tools/BUILD.bazel
+--- a/jaxlib/tools/BUILD.bazel
++++ b/jaxlib/tools/BUILD.bazel
+@@ -38,6 +38,7 @@
+     "deploy_wheel",
+     "get_test_suite_list",
+     "if_pypi_cuda_wheel_deps",
++    "if_windows",
+     "jax_wheel",
+     "pytype_strict_library",
+     "pytype_test",
+@@ -247,7 +248,9 @@
+     ]),
+     static_srcs = [
+         "LICENSE.txt",
+-    ] + if_cuda([
++    ] + if_windows([
++        "@cuda_nccl//:nccl_runtime_files",
++    ]) + if_cuda([
+         "//jax_plugins/cuda:plugin_pyproject.toml",
+         "//jax_plugins/cuda:plugin_setup.py",
+     ]) + if_rocm([
+@@ -358,6 +361,18 @@
+         "@pypi//wheel",
+         "@rules_python//python/runfiles",
+     ],
++)
++
++# Exercise the wheel builder and its runfiles before compiling GPU targets.
++genrule(
++    name = "build_gpu_plugin_wheel_tool_smoke",
++    outs = ["build_gpu_plugin_wheel_tool_help.txt"],
++    cmd = "\"$(location :build_gpu_plugin_wheel_tool)\" --help > \"$@\"",
++    tags = [
++        "manual",
++        "no-cache",
++    ],
++    tools = [":build_gpu_plugin_wheel_tool"],
+ )
+ 
+ wheel_sources(
+diff --git a/jax/_src/hardware_utils.py b/jax/_src/hardware_utils.py
+--- a/jax/_src/hardware_utils.py
++++ b/jax/_src/hardware_utils.py
+@@ -83,6 +83,8 @@
+ def has_visible_nvidia_gpu() -> bool:
+   """True if there's a visible nvidia gpu available on device, False otherwise."""
+ 
++  if os.name == "nt":
++    return windows_has_visible_nvidia_gpu()
+   return any(os.path.exists(d) for d in _NVIDIA_GPU_DEVICES)
+ 
+ 
+@@ -185,3 +187,22 @@
+   except Exception as e:
+     logger.debug("Failed to check /dev/shm size: %s", e)
+     return 0
++
++
++# Native Windows CUDA discovery compatibility patch.
++def windows_has_visible_nvidia_gpu():
++    """Use the real CUDA driver, including its visible-device selection."""
++    import ctypes
++
++    try:
++        driver = ctypes.WinDLL('nvcuda.dll')
++    except OSError:
++        return False
++    driver.cuInit.argtypes = [ctypes.c_uint]
++    driver.cuInit.restype = ctypes.c_int
++    driver.cuDeviceGetCount.argtypes = [ctypes.POINTER(ctypes.c_int)]
++    driver.cuDeviceGetCount.restype = ctypes.c_int
++    count = ctypes.c_int()
++    return (driver.cuInit(0) == 0
++            and driver.cuDeviceGetCount(ctypes.byref(count)) == 0
++            and count.value > 0)
+diff --git a/jaxlib/mosaic/gpu/dump.cc b/jaxlib/mosaic/gpu/dump.cc
+--- a/jaxlib/mosaic/gpu/dump.cc
++++ b/jaxlib/mosaic/gpu/dump.cc
+@@ -33,7 +33,6 @@
+ #include <cstdint>
+ #include <cstdlib>
+ #include <cstring>
+-#include <fstream>
+ #include <iostream>
+ #include <optional>
+ #include <string>
+@@ -53,8 +52,11 @@
+ #include "absl/strings/str_cat.h"
+ #include "absl/strings/str_format.h"
+ #include "absl/strings/str_split.h"
++#include "llvm/ADT/SmallString.h"
+ #include "llvm/ADT/StringRef.h"
+ #include "llvm/Support/FileSystem.h"
++#include "llvm/Support/MemoryBuffer.h"
++#include "llvm/Support/Program.h"
+ #include "llvm/Support/raw_ostream.h"
+ #include "mlir/Dialect/GPU/IR/GPUDialect.h"
+ #include "mlir/IR/BuiltinAttributes.h"
+@@ -67,19 +69,26 @@
+ 
+ namespace {
+ 
+-#if !defined(_WIN32)
+ class TemporaryDirectory {
+  private:
+   TemporaryDirectory(std::string path) : path(std::move(path)) {}
+-  // TODO(apaszke): Unlink in destructor.
+ 
+  public:
+   static absl::StatusOr<TemporaryDirectory> Create() {
++#if defined(_WIN32)
++    llvm::SmallString<128> path;
++    if (std::error_code error =
++            llvm::sys::fs::createUniqueDirectory("mosaic-gpu", path)) {
++      return absl::InternalError(error.message());
++    }
++    return TemporaryDirectory(path.str().str());
++#else
+     std::string pattern = "/tmp/mosaic-gpu-XXXXXX";
+     if (mkdtemp(pattern.data()) == NULL) {
+       return absl::InternalError("Failed to create temporary directory");
+     }
+     return TemporaryDirectory(std::move(pattern));
++#endif
+   }
+ 
+   std::string_view GetPath() { return path; }
+@@ -95,6 +104,45 @@
+   const char* cuda_path_ptr = mosaic::gpu::GetCUDARoot();
+   if (!cuda_path_ptr)
+     return absl::InternalError("Failed to get the CUDA toolkit path");
++#if defined(_WIN32)
++  // Native installers and redistributable archives use different bin layouts.
++  std::string bin_arm64 = std::string(cuda_path_ptr) + "/bin/arm64";
++  std::string bin = std::string(cuda_path_ptr) + "/bin";
++  llvm::StringRef search_paths[] = {bin_arm64, bin};
++  auto tool_path = llvm::sys::findProgramByName(
++      std::string(tool) + ".exe", search_paths);
++  if (!tool_path) {
++    return absl::InternalError(absl::StrCat(
++        "Failed to find CUDA tool ", tool, ": ", tool_path.getError().message()));
++  }
++
++  llvm::SmallString<128> output_path;
++  if (std::error_code error = llvm::sys::fs::createTemporaryFile(
++          "mosaic-gpu-nvdisasm", "txt", output_path)) {
++    return absl::InternalError(error.message());
++  }
++  absl::Cleanup output_cleanup = [&] { llvm::sys::fs::remove(output_path); };
++  std::vector<llvm::StringRef> argv(args.begin(), args.end() - 1);
++  std::optional<llvm::StringRef> redirects[] = {
++      llvm::StringRef(""), output_path.str(),
++      stderr_to_stdout ? std::optional<llvm::StringRef>(output_path.str())
++                       : std::nullopt};
++  std::string error_message;
++  // LLVM quotes Windows arguments and captures both streams without a shell.
++  int status = llvm::sys::ExecuteAndWait(*tool_path, argv, std::nullopt,
++                                        redirects, 0, 0, &error_message);
++  auto output = llvm::MemoryBuffer::getFile(output_path);
++  if (status != 0) {
++    return absl::InternalError(absl::StrCat(
++        "CUDA tool failed (exit ", status, "): ", error_message,
++        output ? (*output)->getBuffer().str() : output.getError().message()));
++  }
++  if (!output) {
++    return absl::InternalError(absl::StrCat(
++        "Failed to read CUDA tool output: ", output.getError().message()));
++  }
++  return (*output)->getBuffer().str();
++#else
+   std::string tool_path(cuda_path_ptr);
+   tool_path += "/bin/";
+   tool_path += tool;
+@@ -167,6 +215,7 @@
+     return absl::InternalError(error_message);
+   }
+   return stdout;
++#endif
+ }
+ 
+ // Parse the SASS and reformat control codes following NervanaSystems/maxas.
+@@ -230,7 +279,6 @@
+   }
+   return result;
+ }
+-#endif
+ 
+ // The name of the attribute wrapping the module basename for dumping. See
+ // `GetDumpOptionsForModule` for more details.
+@@ -324,13 +372,6 @@
+ 
+ void DumpSass(mlir::gpu::BinaryOp binary, std::string_view path,
+               std::string_view basename, bool include_sass_ctrl) {
+-#if defined(_WIN32)
+-  static_cast<void>(binary);
+-  static_cast<void>(path);
+-  static_cast<void>(basename);
+-  static_cast<void>(include_sass_ctrl);
+-  LOG(ERROR) << "SASS dumping is not supported on Windows.";
+-#else
+   auto objects = binary.getObjects();
+   if (objects.size() != 1) {
+     std::cerr << "Multiple objects per gpu.binary unsupported" << std::endl;
+@@ -347,14 +388,25 @@
+     std::cerr << "Failed to create a temporary directory" << std::endl;
+     return;
+   }
++  absl::Cleanup tmpdir_cleanup = [&] {
++    llvm::sys::fs::remove_directories(std::string(tmpdir->GetPath()));
++  };
+   std::string elf_path = std::string(tmpdir->GetPath()) + "/kernel.bin";
+-  // Dump ELF into a file.
+-  std::ofstream elf_out(elf_path.c_str());
+-  if (!elf_out) {
++  // OF_None writes the ELF in binary mode, without newline translation.
++  std::error_code error;
++  llvm::raw_fd_ostream elf_out(elf_path, error, llvm::sys::fs::OF_None);
++  if (error) {
++    std::cerr << "Failed to open binary file: " << error.message() << std::endl;
++    return;
++  }
++  elf_out << elf;
++  // Close before nvdisasm opens the file, including on Windows.
++  elf_out.close();
++  if (elf_out.has_error()) {
+     std::cerr << "Failed to write binary to a file" << std::endl;
+-    return;
+-  }
+-  elf_out << elf << std::endl;
++    elf_out.clear_error();
++    return;
++  }
+   // Call nvdisasm to pretty-print SASS.
+   std::vector<const char*> nvdisasm_args = {"nvdisasm", "-ndf", "-c",
+                                             elf_path.c_str()};
+@@ -376,7 +428,6 @@
+     mosaic::gpu::DumpToFileOrStdout(*result, absl::StrCat(basename, ".sass"),
+                                     path);
+   }
+-#endif
+ }
+ 
+ }  // namespace gpu
