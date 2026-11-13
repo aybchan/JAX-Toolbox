@@ -385,21 +385,6 @@ jobs:
           $buildArgs = @(Get-Content C:/b/build-args.json -Raw | ConvertFrom-Json)
           python build/build.py @buildArgs
 
-      - name: Limit the Bazel cache to 8 GiB
-        id: trim-bazel-cache
-        if: ${{ !cancelled() && steps.bazel-cache-restore.outcome == 'success' }}
-        continue-on-error: true
-        # Batch mode exits before Bazel's idle-time cache GC can run.
-        run: python ./toolbox/.github/workflows/scripts/trim-bazel-disk-cache.py C:/b/disk-cache --max-bytes 8589934592
-
-      - name: Save successful Bazel actions after the build
-        if: ${{ !cancelled() && steps.trim-bazel-cache.outcome == 'success' }}
-        uses: actions/cache/save@v5
-        continue-on-error: true
-        with:
-          path: C:/b/disk-cache
-          key: ${{ steps.bazel-cache-restore.outputs.cache-primary-key }}
-
       - name: Collect native build failure diagnostics
         if: failure()
         run: |
@@ -588,3 +573,20 @@ jobs:
             jax/dist/LICENSE.nccl.txt
           if-no-files-found: error
           retention-days: 14
+
+      # Publish verified wheels before cache handling can exhaust the job limit.
+      # Keep successful actions from failed builds too, unless cancelled.
+      - name: Limit the Bazel cache to 8 GiB
+        id: trim-bazel-cache
+        if: ${{ !cancelled() && steps.bazel-cache-restore.outcome == 'success' }}
+        continue-on-error: true
+        # Batch mode exits before Bazel's idle-time cache GC can run.
+        run: python ./toolbox/.github/workflows/scripts/trim-bazel-disk-cache.py C:/b/disk-cache --max-bytes 8589934592
+
+      - name: Save successful Bazel actions
+        if: ${{ !cancelled() && steps.trim-bazel-cache.outcome == 'success' }}
+        uses: actions/cache/save@v5
+        continue-on-error: true
+        with:
+          path: C:/b/disk-cache
+          key: ${{ steps.bazel-cache-restore.outputs.cache-primary-key }}
