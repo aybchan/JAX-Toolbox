@@ -56,8 +56,8 @@
 
 - [x] Add meaningful regression checks for both import orders, missing SDK files, and wrong-architecture/missing-export payloads.
 - [x] Preserve non-Windows behavior and retain DLL-directory handles for the lifetime of imported extensions.
-- [ ] Verify the real SDK and wheel DLL architecture, expected version and required exports; query `ncclGetVersion` natively when loadable.
-- [ ] Require the final PJRT PE import table to contain real NCCL collective APIs; keep the existing four-wheel and source-provenance checks.
+- [x] Verify the real SDK and wheel DLL architecture, expected version and required exports; query `ncclGetVersion` natively when loadable.
+- [x] Require the final PJRT PE import table to contain real NCCL collective APIs; keep the existing four-wheel and source-provenance checks.
 
 ### Task 4: Integrate the CI loop
 
@@ -69,9 +69,9 @@
 - [x] Remove `--disable_nccl`, explicitly override the Windows no-NCCL define, and extend the existing preflight with real XLA NCCL targets.
 - [x] Preserve the existing 8 GiB Bazel cache; add a separate exact-source/toolchain SDK cache if native build time warrants it.
 - [x] Include bundled NCCL provenance and clear GPU-runtime limitations in the artifact.
-- [ ] Run focused local checks, inspect the complete diff, commit owned paths, and push the same branch.
-- [ ] Monitor the exact-head CI job. On failure, let diagnostics/cache finish, classify the log, implement a justified fix, and repeat.
-- [ ] Download the successful real artifact and verify hashes, native architecture, NCCL imports/exports, metadata, and provenance before completing the goal.
+- [x] Run focused local checks, inspect the complete diff, commit owned paths, and push the same branch.
+- [x] Monitor the exact-head CI job. On failure, let diagnostics/cache finish, classify the log, implement a justified fix, and repeat.
+- [x] Download the successful real artifact and verify hashes, native architecture, NCCL imports/exports, metadata, and provenance before completing the goal.
 
 ## Verified baseline
 
@@ -127,3 +127,15 @@ Pinned source evidence: [disk-cache hit handling](https://github.com/bazelbuild/
 A completion review identified two gaps in the installed-runtime check: it called the DLL-directory helper directly instead of importing the actual installed CUDA package, and it reported the installed DLL hash without asserting equality with the verified SDK. The next check imports `jax_cuda13_plugin` in a fresh process before importing JAX/PJRT, then loads NCCL by name, verifies the loaded path and version, and requires the installed DLL hash to match the verified SDK. This requires no GPU. A nominal PJRT-first import would also initialize the CUDA package through JAX imports, so it would not independently prove that registration path.
 
 All 29 workflow-script tests pass, including four regressions that reject the previous installed-check behavior. Python, YAML, and PowerShell syntax checks pass. Independent review found no remaining defects in this validation change; native installed-package execution remains pending CI.
+
+### Iteration 5 — 5d590bc9
+
+[Run 43317593835](https://github.com/aybchan/JAX-Toolbox/actions/runs/43317593835), job `131529555569`, completed successfully at commit `5d590bc923361fcf11a17dc9fea1d0710dcdca67`. The restored NCCL SDK passed verification. With cached outputs materialized, the actual wheel-builder runfiles smoke passed, followed by CUDA/NCCL collective preflight and all four wheel builds. Bazel cache saving completed successfully.
+
+The run installed the JAX, jaxlib, CUDA 13 kernel plugin, and CUDA 13 PJRT wheels on native Windows ARM64 CPython 3.14.10. All wheels have version `0.11.2.dev0+selfbuilt`. CPU matrix multiplication and JIT gradient checks passed. In a fresh process, importing the installed `jax_cuda13_plugin` registered the bundled NCCL directory; loading NCCL by name selected the installed package DLL and `ncclGetVersion` returned `23206` (NCCL 2.32.6). Its SHA256 matched both the verified SDK and wheel payload: `37d2d7c65bd4e5998be00ea677c973f8b08a5820bff1dfb002ab19349359b41b`.
+
+Downloaded artifact `13997877205`, `jax-windows-arm64-cuda13-nccl-py3.14`, contains 405,557,766 bytes and has SHA256 `c859340a76a3773d4a47c6ab09607ca69227b44e86c1184a0fe0a6f75dd39591`, matching GitHub's artifact metadata. Independent inspection verified all four wheel tags and dependencies, all 43 native payloads as ARM64 PE binaries, one bundled NCCL DLL and license, and 33 PJRT NCCL imports resolved by real DLL exports. Source provenance matches the successful commit, source pins, seven patches, CUDA redistribution manifest, and upstream NCCL license; Windows checkout text comparisons normalize only CRLF to LF.
+
+The build and NCCL package validation objective is complete. GPU runtime remains unvalidated: CUDA PJRT initialization logged `LoadLibraryExW` failure with Windows error 126 on the GPU-less runner, before JAX continued with CPU execution. The exact missing dependency was not identified. PJRT directly imports driver-supplied `nvml.dll`, which is absent from the pinned CUDA development redistribution; this is a plausible cause, not proof of the sole cause. CUDA initialization and GPU collective correctness and performance still require validation on suitable hardware.
+
+Final remote verification confirmed that NCCL work is on `aybchan/feat/windows-build-cuda-nccl` and the CUDA-only branch remains restored to `44c101c77e5f9f5999c41efb0b25de983d818e15`. This documentation-only closeout does not change the build inputs; the verified artifact was built from `5d590bc923361fcf11a17dc9fea1d0710dcdca67`.
