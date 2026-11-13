@@ -203,12 +203,12 @@ diff --git a/xla/stream_executor/cuda/cudnn_api_wrappers.cc b/xla/stream_executo
  extern "C" [[gnu::weak]] cudnnStatus_t cudnnGetProperty(
      libraryPropertyType type, int* value);
 +#endif
-
+ 
  static libraryPropertyType ToLibraryPropertyType(CudnnProperty type) {
    switch (type) {
 @@ -99,9 +101,11 @@
  }
-
+ 
  absl::StatusOr<int> GetCudnnProperty(CudnnProperty type) {
 +#if !defined(_WIN32)
    if (!cudnnGetProperty) {
@@ -363,7 +363,7 @@ diff --git a/xla/stream_executor/cuda/BUILD b/xla/stream_executor/cuda/BUILD
 -    ],
 +    ] + if_windows(["//xla/tsl/cuda:cudnn"]),
  )
-
+ 
  xla_cc_test(
 @@ -1774,9 +1775,14 @@
          "//xla/tsl/cuda:tensorrt_rpath",

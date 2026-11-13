@@ -558,12 +558,12 @@ diff --git a/jax/_src/hardware_utils.py b/jax/_src/hardware_utils.py
 @@ -83,6 +83,8 @@
  def has_visible_nvidia_gpu() -> bool:
    """True if there's a visible nvidia gpu available on device, False otherwise."""
-
+ 
 +  if os.name == "nt":
 +    return windows_has_visible_nvidia_gpu()
    return any(os.path.exists(d) for d in _NVIDIA_GPU_DEVICES)
-
-
+ 
+ 
 @@ -185,3 +187,22 @@
    except Exception as e:
      logger.debug("Failed to check /dev/shm size: %s", e)
