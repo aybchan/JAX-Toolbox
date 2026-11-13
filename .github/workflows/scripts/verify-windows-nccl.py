@@ -260,8 +260,14 @@ def inspect_wheels(directory, sdk_root, expected_version):
         symbols = payloads['pjrt']['imports'].get('nccl.dll', [])
         require('ncclAllReduce' in symbols, 'PJRT must import nccl.dll and the real ncclAllReduce collective')
         check_exports(payloads['plugin']['exports'], set(symbols) | REQUIRED_EXPORTS, 'Bundled NCCL')
+        cudnn_symbols = payloads['pjrt']['imports'].get('cudnn64_9.dll', [])
+        # A Windows weak reference can omit the version-property API entirely,
+        # leaving cuDNN support unavailable to the convolution compiler.
+        require('cudnnGetProperty' in cudnn_symbols,
+                'PJRT must import cudnnGetProperty from cudnn64_9.dll for cuDNN initialization')
     return {'wheel_dir': str(directory.resolve()), 'version': expected_version,
-            'nccl_sha256': sdk['nccl_sha256'], 'pjrt_nccl_imports': sorted(symbols)}
+            'nccl_sha256': sdk['nccl_sha256'], 'pjrt_nccl_imports': sorted(symbols),
+            'pjrt_cudnn_imports': sorted(cudnn_symbols)}
 
 
 def query_version(path, expected_version, *, by_name=False):

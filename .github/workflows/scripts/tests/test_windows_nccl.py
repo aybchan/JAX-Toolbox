@@ -125,7 +125,8 @@ class NcclVerificationTests(unittest.TestCase):
         with zipfile.ZipFile(directory / 'jax_cuda13_pjrt-0.0.0-py3-none-win_arm64.whl', 'w') as wheel:
             wheel.writestr('jax_plugins/xla_cuda13/xla_cuda_plugin.so',
                           pe_fixture({'GetPjrtApi'}, imports=imports if imports is not None else
-                                     {'nccl.dll': sorted(API)}))
+                                     {'nccl.dll': sorted(API),
+                                      'cudnn64_9.dll': ['cudnnGetProperty', 'cudnnGetVersion']}))
         return directory
 
     def test_arm64_sdk_and_real_import_export_tables(self):
@@ -133,7 +134,18 @@ class NcclVerificationTests(unittest.TestCase):
         self.assertEqual(sdk['version'], 23206)
         report = self.nccl.inspect_wheels(self.wheels(), self.sdk, 23206)
         self.assertEqual(set(report['pjrt_nccl_imports']), API)
+        self.assertEqual(report['pjrt_cudnn_imports'], ['cudnnGetProperty', 'cudnnGetVersion'])
         self.assertEqual(report['nccl_sha256'], sdk['nccl_sha256'])
+
+    def test_missing_pjrt_cudnn_property_import_rejected(self):
+        # A Windows weak reference omitted this import in the released wheel,
+        # so cuDNN initialization crashed even though cudnnGetVersion resolved.
+        for cudnn_imports in ({}, {'cudnn64_9.dll': ['cudnnGetVersion']},
+                              {'cudnn64_8.dll': ['cudnnGetProperty']}):
+            with self.subTest(cudnn_imports=cudnn_imports):
+                imports = {'nccl.dll': sorted(API), **cudnn_imports}
+                with self.assertRaisesRegex(ValueError, 'cudnnGetProperty'):
+                    self.nccl.inspect_wheels(self.wheels(imports=imports), self.sdk, 23206)
 
     def test_wrong_architecture_rejected(self):
         (self.sdk / 'bin/nccl.dll').write_bytes(pe_fixture(API, machine=0x8664))

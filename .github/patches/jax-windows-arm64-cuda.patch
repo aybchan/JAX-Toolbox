@@ -327,7 +327,7 @@ diff --git a/MODULE.bazel b/MODULE.bazel
 diff --git a/jaxlib/plugin_support.py b/jaxlib/plugin_support.py
 --- a/jaxlib/plugin_support.py
 +++ b/jaxlib/plugin_support.py
-@@ -14,11 +14,51 @@
+@@ -14,11 +14,61 @@
  
  from collections.abc import Sequence
  import importlib
@@ -363,7 +363,17 @@ diff --git a/jaxlib/plugin_support.py b/jaxlib/plugin_support.py
 +        _windows_cuda_dll_directories[directory] = os.add_dll_directory(
 +            str(directory)
 +        )
-+  for variable in ("CUDA_PATH", "CUDNN_PATH", "NCCL_PATH"):
++  # Installers can put cuDNN beneath a versioned bin/<version>/arm64 folder.
++  # Register the explicit leaf directory in every interpreter, including tests'
++  # subprocesses, before importing extensions that depend on cuDNN.
++  cudnn_bin = os.environ.get("CUDNN_BIN_PATH")
++  if cudnn_bin:
++    directory = pathlib.Path(cudnn_bin).resolve()
++    if directory.is_dir() and directory not in _windows_cuda_dll_directories:
++      _windows_cuda_dll_directories[directory] = os.add_dll_directory(
++          str(directory)
++      )
++  for variable in ("CUDA_PATH", "CUDNN_PATH", "NCCL_PATH", "CUPTI_PATH"):
 +    # AddDllDirectory does not define ordering between registered directories.
 +    if variable == "NCCL_PATH" and bundled_nccl:
 +      continue
@@ -542,3 +552,38 @@ diff --git a/jaxlib/tools/BUILD.bazel b/jaxlib/tools/BUILD.bazel
  )
  
  wheel_sources(
+diff --git a/jax/_src/hardware_utils.py b/jax/_src/hardware_utils.py
+--- a/jax/_src/hardware_utils.py
++++ b/jax/_src/hardware_utils.py
+@@ -83,6 +83,8 @@
+ def has_visible_nvidia_gpu() -> bool:
+   """True if there's a visible nvidia gpu available on device, False otherwise."""
+
++  if os.name == "nt":
++    return windows_has_visible_nvidia_gpu()
+   return any(os.path.exists(d) for d in _NVIDIA_GPU_DEVICES)
+
+
+@@ -185,3 +187,22 @@
+   except Exception as e:
+     logger.debug("Failed to check /dev/shm size: %s", e)
+     return 0
++
++
++# Native Windows CUDA discovery compatibility patch.
++def windows_has_visible_nvidia_gpu():
++    """Use the real CUDA driver, including its visible-device selection."""
++    import ctypes
++
++    try:
++        driver = ctypes.WinDLL('nvcuda.dll')
++    except OSError:
++        return False
++    driver.cuInit.argtypes = [ctypes.c_uint]
++    driver.cuInit.restype = ctypes.c_int
++    driver.cuDeviceGetCount.argtypes = [ctypes.POINTER(ctypes.c_int)]
++    driver.cuDeviceGetCount.restype = ctypes.c_int
++    count = ctypes.c_int()
++    return (driver.cuInit(0) == 0
++            and driver.cuDeviceGetCount(ctypes.byref(count)) == 0
++            and count.value > 0)

@@ -193,6 +193,31 @@ diff --git a/xla/stream_executor/cuda/cudnn_api_wrappers.cc b/xla/stream_executo
  
  #include <string>
  
+@@ -84,8 +82,12 @@
+ // cudnn_plugin. This is mainly relevant for unit tests that use the CUDA
+ // executor which depends on this wrapper but should not introduce a dependency
+ // on cudnn.
++// COFF weak references do not pull symbols from import libraries. Windows
++// uses the normal cuDNN header declaration and an explicit BUILD dependency.
++#if !defined(_WIN32)
+ extern "C" [[gnu::weak]] cudnnStatus_t cudnnGetProperty(
+     libraryPropertyType type, int* value);
++#endif
+
+ static libraryPropertyType ToLibraryPropertyType(CudnnProperty type) {
+   switch (type) {
+@@ -99,9 +101,11 @@
+ }
+
+ absl::StatusOr<int> GetCudnnProperty(CudnnProperty type) {
++#if !defined(_WIN32)
+   if (!cudnnGetProperty) {
+     return absl::NotFoundError("cuDNN is not linked into the application.");
+   }
++#endif
+   int value{};
+   ABSL_RETURN_IF_ERROR(
+       ToStatus(cudnnGetProperty(ToLibraryPropertyType(type), &value)));
 diff --git a/xla/pjrt/pjrt_api.cc b/xla/pjrt/pjrt_api.cc
 --- a/xla/pjrt/pjrt_api.cc
 +++ b/xla/pjrt/pjrt_api.cc
@@ -331,6 +356,15 @@ diff --git a/xla/stream_executor/cuda/BUILD b/xla/stream_executor/cuda/BUILD
          "@tsl//tsl/platform:platform_port",
      ],
  )
+@@ -557,7 +558,7 @@
+         "@com_google_absl//absl/strings:string_view",
+         "@local_config_cuda//cuda:cuda_headers",
+         "@local_config_cuda//cuda:cudnn_header",
+-    ],
++    ] + if_windows(["//xla/tsl/cuda:cudnn"]),
+ )
+
+ xla_cc_test(
 @@ -1774,9 +1775,14 @@
          "//xla/tsl/cuda:tensorrt_rpath",
      ] + if_nccl([
