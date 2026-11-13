@@ -70,7 +70,7 @@ class GitHubClient:
         try:
             connection.request(method, path, body=body, headers=request_headers)
             yield connection.getresponse()
-        except (OSError, http.client.HTTPException, ValueError) as error:
+        except (OSError, http.client.HTTPException, ValueError):
             raise PublishError(f'Request failed: {label}') from None
         finally:
             connection.close()

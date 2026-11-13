@@ -27,12 +27,14 @@ class Transport:
     def __init__(self, responses):
         self.responses = iter(responses)
         self.requests = []
+        self.sent_bodies = []
 
     def __call__(self, host, timeout):
         owner = self
         class Connection:
             def request(self, method, path, body=None, headers=None):
                 owner.requests.append((host, method, path, body, dict(headers)))
+                owner.sent_bodies.append(body.read() if hasattr(body, 'read') else body)
             def getresponse(self):
                 response = next(owner.responses)
                 if isinstance(response, Exception):
@@ -198,6 +200,7 @@ class PublisherTests(unittest.TestCase):
         host, method, endpoint, body, headers = transport.requests[0]
         self.assertEqual((host, method, endpoint), ('uploads.github.com', 'POST', p.UPLOAD_PATH))
         self.assertTrue(hasattr(body, 'read'))
+        self.assertEqual(transport.sent_bodies, [b'exact raw bytes'])
         self.assertEqual(headers['Content-Length'], str(path.stat().st_size))
         self.assertEqual(headers['Content-Type'], 'application/zip')
         self.assertEqual(headers['X-GitHub-Api-Version'], '2026-03-10')
@@ -251,6 +254,19 @@ class PublisherTests(unittest.TestCase):
             self.pub.publish(client)
         client.upload_asset.assert_not_called()
         self.assertFalse(any(call[0].startswith('delete') for call in client.method_calls))
+
+    def test_duplicate_existing_assets_are_rejected(self):
+        client = self.fake_client([self.asset, self.asset])
+        with mock.patch.object(self.pub, 'verify_archive'), self.assertRaises(self.pub.PublishError):
+            self.pub.publish(client)
+        client.upload_asset.assert_not_called()
+
+    def test_archive_verification_failure_blocks_publication(self):
+        client = self.fake_client([])
+        with mock.patch.object(self.pub, 'verify_archive', side_effect=self.pub.PublishError('bad ZIP')):
+            with self.assertRaises(self.pub.PublishError):
+                self.pub.publish(client)
+        client.upload_asset.assert_not_called()
 
     def test_upload_response_digest_is_checked(self):
         client = self.fake_client([], dict(self.asset, digest=None))
