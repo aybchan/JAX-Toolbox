@@ -1,0 +1,17 @@
+diff --git a/src/google/protobuf/port_def.inc b/src/google/protobuf/port_def.inc
+--- a/src/google/protobuf/port_def.inc
++++ b/src/google/protobuf/port_def.inc
+@@ -417,7 +417,12 @@
+ #ifdef PROTOBUF_THREAD_LOCAL
+ #error PROTOBUF_THREAD_LOCAL was previously defined
+ #endif
+-#if defined(_MSC_VER)
++#if defined(_MSC_VER) && defined(__clang__) && defined(__CUDA_ARCH__)
++// Clang accepts host thread_local declarations in its CUDA device pass, but
++// rejects __declspec(thread) against the device target's lack of TLS support.
++// Keep the Windows host declaration unchanged in the host compilation pass.
++#define PROTOBUF_THREAD_LOCAL thread_local
++#elif defined(_MSC_VER)
+ #define PROTOBUF_THREAD_LOCAL __declspec(thread)
+ #else
+ #define PROTOBUF_THREAD_LOCAL __thread

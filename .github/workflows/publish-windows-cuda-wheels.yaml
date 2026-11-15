@@ -1,0 +1,45 @@
+name: Publish verified Windows ARM64 CUDA wheels
+
+on:
+  push:
+    branches:
+      - feat/windows-build-cuda-nccl
+    paths:
+      - '.github/workflows/publish-windows-cuda-wheels.yaml'
+      - '.github/workflows/scripts/publish-windows-cuda-wheels.py'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: publish-jax-win-arm64-cuda-nccl
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ github.repository == 'aybchan/JAX-Toolbox' && github.ref == 'refs/heads/feat/windows-build-cuda-nccl' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Check out the publisher
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Test publication checks
+        run: python3 -B -m unittest discover -s .github/workflows/scripts/tests -p test_publish_windows_cuda_wheels.py
+
+      - name: Publish the pinned verified artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -B .github/workflows/scripts/publish-windows-cuda-wheels.py \
+            --run-id 43753633390 \
+            --artifact-id 14180068431 \
+            --head-sha 73e2337783b0899468cddf035cd8fc14001c0292 \
+            --zip-sha256 92c90f0b7250fb3053af8716d8e81cded72607b4f98c6abb3a2e84a8b35cea69 \
+            --zip-size 405560516 \
+            --release-id 444290320
