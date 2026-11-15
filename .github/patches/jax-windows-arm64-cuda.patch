@@ -163,6 +163,32 @@ diff --git a/MODULE.bazel b/MODULE.bazel
  
  #include <algorithm>
  #include <array>
+@@ -255,6 +250,7 @@
+   if (!nvshmem_path.empty()) {
+     libraries_to_link.push_back(nvshmem_path);
+   }
++  // Quote each MLIR list element to preserve spaces and commas in paths.
+   return mlir::parsePassPipeline(absl::StrFormat(
+       R"(
+         builtin.module(
+@@ -283,7 +279,7 @@
+           gpu.module(reconcile-unrealized-casts),
+           ensure-debug-info-scope-on-llvm-func{emission-kind=DebugDirectivesOnly},
+           convert-math-to-llvm{approximate-log1p=true},
+-          mosaic-gpu-module-to-assembly{libraries-to-link=%3$s},
++          mosaic-gpu-module-to-assembly{libraries-to-link={"%3$s"}},
+           canonicalize{max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},
+           cse,
+           mosaic-gpu-assembly-to-binary,
+@@ -292,7 +288,7 @@
+           reconcile-unrealized-casts
+         )
+       )",
+-      sm, ptx_isa, absl::StrJoin(libraries_to_link, ","), verify_target));
++      sm, ptx_isa, absl::StrJoin(libraries_to_link, "\",\""), verify_target));
+ }
+ 
+ mlir::LogicalResult RunPasses(mlir::OpPassManager&& passes,
 --- a/jaxlib/mosaic/gpu/nvshmem.h
 +++ b/jaxlib/mosaic/gpu/nvshmem.h
 @@ -16,7 +16,9 @@
