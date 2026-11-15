@@ -37,9 +37,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 -B .github/workflows/scripts/publish-windows-cuda-wheels.py \
-            --run-id 43485135810 \
-            --artifact-id 14082227290 \
-            --head-sha ad73a58a62738ae977ee01b20c9fff0d90730845 \
-            --zip-sha256 d8a16975104f17fb79eaddaf2bfe8738268553f01d0251753b5d8ad87c10a1c0 \
-            --zip-size 405560067 \
+            --run-id 43753633390 \
+            --artifact-id 14180068431 \
+            --head-sha 73e2337783b0899468cddf035cd8fc14001c0292 \
+            --zip-sha256 92c90f0b7250fb3053af8716d8e81cded72607b4f98c6abb3a2e84a8b35cea69 \
+            --zip-size 405560516 \
             --release-id 444290320
