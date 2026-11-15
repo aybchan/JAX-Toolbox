@@ -390,6 +390,37 @@ jobs:
         run: |
           $diagnostics = 'C:/b/diagnostics'
           New-Item -ItemType Directory -Force $diagnostics | Out-Null
+          # A host-shell crash may leave no Windows event; identify the MSYS runtime.
+          & {
+            $ErrorActionPreference = 'Continue'
+            $PSNativeCommandUseErrorActionPreference = $false
+            $probes = @(
+              @{ Path = 'C:/msys64/usr/bin/pacman.exe'; Arguments = @('-Q', 'bash', 'msys2-runtime', 'coreutils', 'patch') }
+              @{ Path = 'C:/msys64/usr/bin/bash.exe'; Arguments = @('--version') }
+            )
+            foreach ($probe in $probes) {
+              $probePath = $probe.Path
+              $probeArguments = $probe.Arguments
+              "Command: $probePath $($probeArguments -join ' ')"
+              try {
+                & $probePath @probeArguments
+                "Exit code: $LASTEXITCODE"
+              } catch {
+                "Probe unavailable: $($_.Exception.Message)"
+              }
+            }
+            foreach ($fileName in @('bash.exe', 'cat.exe', 'msys-2.0.dll')) {
+              $filePath = "C:/msys64/usr/bin/$fileName"
+              try {
+                $file = Get-Item -LiteralPath $filePath -ErrorAction Stop
+                "File: $($file.FullName)"
+                "SHA256: $((Get-FileHash -LiteralPath $filePath -Algorithm SHA256 -ErrorAction Stop).Hash)"
+                "FileVersion: $($file.VersionInfo.FileVersion)"
+              } catch {
+                "File unavailable: ${filePath}: $($_.Exception.Message)"
+              }
+            }
+          } *> "$diagnostics/msys-runtime.txt"
           & ./toolbox/.github/workflows/scripts/collect-windows-python-runfiles.ps1 `
             -BuildRoot C:/b -OutputPath "$diagnostics/python-runfiles.json"
           $events = Get-WinEvent -FilterHashtable @{
@@ -409,7 +440,8 @@ jobs:
           Get-ChildItem "$diagnostics/hs_err_pid*.log" -ErrorAction SilentlyContinue |
             ForEach-Object { Get-Content $_.FullName -TotalCount 140 }
           foreach ($outputBase in Get-ChildItem C:/b -Directory -ErrorAction SilentlyContinue) {
-            foreach ($relative in @('java.log', 'server/jvm.out', 'command.log')) {
+            foreach ($relative in @('java.log', 'server/jvm.out', 'command.log',
+                'execroot/_main/bash.exe.stackdump', 'execroot/_main/cat.exe.stackdump')) {
               $source = Join-Path $outputBase.FullName $relative
               if (Test-Path $source) {
                 $name = "$($outputBase.Name)-$($relative.Replace('/', '-'))"
