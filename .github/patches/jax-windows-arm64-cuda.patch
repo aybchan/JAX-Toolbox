@@ -755,3 +755,110 @@ diff --git a/jaxlib/mosaic/gpu/dump.cc b/jaxlib/mosaic/gpu/dump.cc
  }
  
  }  // namespace gpu
+diff --git a/jax/experimental/pallas/triton.py b/jax/experimental/pallas/triton.py
+--- a/jax/experimental/pallas/triton.py
++++ b/jax/experimental/pallas/triton.py
+@@ -14,25 +14,88 @@
+ 
+ """Triton-specific Pallas APIs."""
+ 
++import importlib as _importlib
++from typing import TYPE_CHECKING as _TYPE_CHECKING
++
+ from jax._src.pallas.primitives import dot as dot
+ from jax._src.pallas.triton.core import CompilerParams as CompilerParams
+-from jax._src.pallas.triton.pallas_call_registration import CUSTOM_CALL_TARGET_NAME as CUSTOM_CALL_TARGET_NAME
+-from jax._src.pallas.triton.primitives import approx_tanh as approx_tanh
+-from jax._src.pallas.triton.primitives import atomic_add as atomic_add
+-from jax._src.pallas.triton.primitives import atomic_and as atomic_and
+-from jax._src.pallas.triton.primitives import atomic_cas as atomic_cas
+-from jax._src.pallas.triton.primitives import atomic_max as atomic_max
+-from jax._src.pallas.triton.primitives import atomic_min as atomic_min
+-from jax._src.pallas.triton.primitives import atomic_or as atomic_or
+-from jax._src.pallas.triton.primitives import atomic_xchg as atomic_xchg
+-from jax._src.pallas.triton.primitives import atomic_xor as atomic_xor
+-from jax._src.pallas.triton.primitives import debug_barrier as debug_barrier
+-from jax._src.pallas.triton.primitives import elementwise_inline_asm as elementwise_inline_asm
+-from jax._src.pallas.triton.primitives import load as load
+-from jax._src.pallas.triton.primitives import max_contiguous as max_contiguous
+-from jax._src.pallas.triton.primitives import store as store
+ from jax._src.pallas.triton.gpu_info import GpuVersion as GpuVersion
+ from jax._src.pallas.triton.gpu_info import get_gpu_info as get_gpu_info
+ from jax._src.pallas.triton.gpu_info import get_gpu_info_from_version as get_gpu_info_from_version
+ from jax._src.pallas.triton.gpu_info import is_gpu_device as is_gpu_device
+ from jax._src.pallas.triton.gpu_info import GpuInfo as GpuInfo
++
++# CompilerParams is also accepted in interpret mode, which does not use native
++# Triton lowering. Defer native imports until a Triton-specific API is requested.
++if _TYPE_CHECKING:
++  from jax._src.pallas.triton.pallas_call_registration import CUSTOM_CALL_TARGET_NAME as CUSTOM_CALL_TARGET_NAME
++  from jax._src.pallas.triton.primitives import approx_tanh as approx_tanh
++  from jax._src.pallas.triton.primitives import atomic_add as atomic_add
++  from jax._src.pallas.triton.primitives import atomic_and as atomic_and
++  from jax._src.pallas.triton.primitives import atomic_cas as atomic_cas
++  from jax._src.pallas.triton.primitives import atomic_max as atomic_max
++  from jax._src.pallas.triton.primitives import atomic_min as atomic_min
++  from jax._src.pallas.triton.primitives import atomic_or as atomic_or
++  from jax._src.pallas.triton.primitives import atomic_xchg as atomic_xchg
++  from jax._src.pallas.triton.primitives import atomic_xor as atomic_xor
++  from jax._src.pallas.triton.primitives import debug_barrier as debug_barrier
++  from jax._src.pallas.triton.primitives import elementwise_inline_asm as elementwise_inline_asm
++  from jax._src.pallas.triton.primitives import load as load
++  from jax._src.pallas.triton.primitives import max_contiguous as max_contiguous
++  from jax._src.pallas.triton.primitives import store as store
++
++_lazy_exports = {
++    "CUSTOM_CALL_TARGET_NAME": "jax._src.pallas.triton.pallas_call_registration",
++    "approx_tanh": "jax._src.pallas.triton.primitives",
++    "atomic_add": "jax._src.pallas.triton.primitives",
++    "atomic_and": "jax._src.pallas.triton.primitives",
++    "atomic_cas": "jax._src.pallas.triton.primitives",
++    "atomic_max": "jax._src.pallas.triton.primitives",
++    "atomic_min": "jax._src.pallas.triton.primitives",
++    "atomic_or": "jax._src.pallas.triton.primitives",
++    "atomic_xchg": "jax._src.pallas.triton.primitives",
++    "atomic_xor": "jax._src.pallas.triton.primitives",
++    "debug_barrier": "jax._src.pallas.triton.primitives",
++    "elementwise_inline_asm": "jax._src.pallas.triton.primitives",
++    "load": "jax._src.pallas.triton.primitives",
++    "max_contiguous": "jax._src.pallas.triton.primitives",
++    "store": "jax._src.pallas.triton.primitives",
++}
++
++__all__ = [
++    "dot",
++    "CompilerParams",
++    "CUSTOM_CALL_TARGET_NAME",
++    "approx_tanh",
++    "atomic_add",
++    "atomic_and",
++    "atomic_cas",
++    "atomic_max",
++    "atomic_min",
++    "atomic_or",
++    "atomic_xchg",
++    "atomic_xor",
++    "debug_barrier",
++    "elementwise_inline_asm",
++    "load",
++    "max_contiguous",
++    "store",
++    "GpuVersion",
++    "get_gpu_info",
++    "get_gpu_info_from_version",
++    "is_gpu_device",
++    "GpuInfo",
++]
++
++
++def __getattr__(name):
++  module_name = _lazy_exports.get(name)
++  if module_name is None:
++    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
++  value = getattr(_importlib.import_module(module_name), name)
++  globals()[name] = value
++  return value
++
++
++def __dir__():
++  return sorted(set(globals()) | set(__all__))
